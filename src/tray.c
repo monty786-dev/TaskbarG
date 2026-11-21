@@ -53,19 +53,21 @@ int tray_refresh(void) {
     return changed;
 }
 
-int tray_width(void) { return g_n * px(24); }
+int tray_width(void) { return g_n * px(cfg_int("tray_cell")); }
 
-void tray_draw(HDC dc, RECT area) {
-    int sz = px(16), cell = px(24), x = area.left;
+void tray_draw(HDC dc, RECT area, int vertical) {
+    int cell = px(cfg_int("tray_cell")), sz = cell * 2 / 3, pos = vertical ? area.top : area.left;
     for (int i = 0; i < g_n; i++) {
         TrayIcon *t = &g_icons[i];
-        t->rect.left = x; t->rect.top = area.top; t->rect.right = x + cell; t->rect.bottom = area.bottom;
+        if (vertical) { t->rect.left = area.left; t->rect.right = area.right; t->rect.top = pos; t->rect.bottom = pos + cell; }
+        else { t->rect.left = pos; t->rect.right = pos + cell; t->rect.top = area.top; t->rect.bottom = area.bottom; }
         if (t->has && t->bmp) {
             HDC src = CreateCompatibleDC(dc); HGDIOBJ old = SelectObject(src, t->bmp);
-            TransparentBlt(dc, x + (cell - sz) / 2, (area.top + area.bottom) / 2 - sz / 2, sz, sz, src, 0, 0, t->w, t->hh, t->key);
+            int cx = (t->rect.left + t->rect.right) / 2, cy = (t->rect.top + t->rect.bottom) / 2;
+            TransparentBlt(dc, cx - sz / 2, cy - sz / 2, sz, sz, src, 0, 0, t->w, t->hh, t->key);
             SelectObject(src, old); DeleteDC(src);
         }
-        x += cell;
+        pos += cell;
     }
 }
 

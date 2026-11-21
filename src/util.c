@@ -207,3 +207,12 @@ void window_process_path(HWND h, wchar_t *out, int n) {
     if (!QueryFullProcessImageNameW(p, 0, out, &size)) out[0] = 0;
     CloseHandle(p);
 }
+
+COLORREF c_hsv(double h, double s, double v) {
+    h = h - 360.0 * (int)(h / 360.0); if (h < 0) h += 360.0;
+    double c = v * s, hp = h / 60.0, m = v - c, hh = hp - 2.0 * (int)(hp / 2.0), x = c * (1.0 - (hh > 1.0 ? hh - 1.0 : 1.0 - hh));
+    double r = 0, g = 0, b = 0; int k = (int)hp % 6;
+    if (k == 0) { r = c; g = x; } else if (k == 1) { r = x; g = c; } else if (k == 2) { g = c; b = x; }
+    else if (k == 3) { g = x; b = c; } else if (k == 4) { r = x; b = c; } else { r = c; b = x; }
+    return RGB((int)((r + m) * 255 + 0.5), (int)((g + m) * 255 + 0.5), (int)((b + m) * 255 + 0.5));
+}

@@ -19,84 +19,58 @@ typedef struct { const char *key; char kind; const char *s; double n; } Def;
 #define N(k)    { k, 'n', NULL, 0 }
 
 static const Def DEFAULTS[] = {
-    /* personalisation */
-    S("theme","dark"), B("glass",1), I("glass_opacity",88), S("accent",""), S("bar_color",""),
+    /* ---- look ---- */
+    S("os_theme","windows10"), S("theme","dark"), S("accent",""), S("bar_color",""),
+    B("glass",1), I("glass_opacity",88), I("glass_gloss",45), I("glass_blur_amount",14),
+    B("glass_blur",1), B("glass_blur_bar",1), B("glass_blur_start",1), B("glass_blur_title",1),
+    S("glass_preset","custom"), B("round_corners",0), I("corner_radius",12),
     S("font","Segoe UI"), I("font_size",14), F("scale",1.0),
-    B("glass_blur",1), B("glass_blur_bar",1), B("glass_blur_start",1),
-    B("glass_blur_title",1), B("glass_blur_app",0), I("glass_gloss",50),
-    S("glass_theme","windows11"), B("corner_round",1), B("animations",1), S("os_preset","custom"),
-    /* taskbar layout */
+    S("icon_shape","none"), B("icon_border",0), I("icon_border_width",1), S("icon_border_color",""),
+    /* ---- taskbar ---- */
     S("position","bottom"), S("alignment","left"), I("height",40), I("icon_size",24),
     I("button_width",170), B("show_titles",0), B("icon_accent",1),
-    B("bar_corner_round",0), I("bar_detach",0), B("auto_bar_width",0),
-    S("divider_thickness","mid"), S("icon_shape","square"), B("icon_shape_border",0),
-    B("show_separator",1), B("show_preview_button",1), B("tray_icons",1), B("kbd_tray_button",1),
-    B("hide_wine_taskbar",0),
-    S("clock_format","%I:%M %p\n%d-%m-%Y"), S("clock_timezone","india"), I("clock_utc_offset",330),
-    I("clock_offset",0), B("tb_collapse_pinned",0),
-    /* start menu */
-    S("start_size","normal"), B("start_rounded",0), B("start_list_collapsed",0),
-    B("start_show_recent",1), B("start_show_most_used",1),
-    I("tile_size",96), O("tile_sizes"), S("tile_color_mode","multi"), B("tile_shuffle",0),
-    I("tile_shuffle_seconds",8), O("app_usage"), A("app_recent",""),
-    B("show_run_button",1), B("show_programs_button",1), B("show_system_button",1),
-    S("power_position","bottom"), S("vbar_bg",""), I("vbar_opacity",100),
-    S("start_bg_image",""), I("start_opacity",100),
-    /* full-screen / maximise */
-    S("fs_mode","resize"), S("max_mode","show"), S("float_corner","bottom-right"), I("reveal_seconds",5),
-    /* reveal bar */
-    B("bar_autohide",0), B("strip_enabled",0), S("strip_pos","center"),
-    I("strip_width",40), I("strip_height",6), S("strip_color",""), I("strip_opacity",80),
-    I("strip_seconds",4), A("strip_exclude",""), S("strip_corner","flat"),
-    B("strip_fullscreen",1), S("reveal_animation","fade"),
-    /* previews */
-    B("preview_enabled",1), I("preview_size",200), I("preview_delay",450), B("preview_live",1),
-    /* start button */
-    S("start_icon",""), S("start_color",""),
-    /* window title bar / skin */
-    B("skin_enabled",1), S("skin_theme","windows10"), O("skin_custom_themes"),
-    S("skin_color_mode","theme"), S("skin_color",""), S("skin_icon_set","theme"),
-    B("skin_btn_pin",1), B("skin_btn_snap",1), B("skin_btn_shade",1), S("skin_snap_mode","toggle"),
-    B("skin_owned",1), B("skin_border",1), B("skin_scrollbars",1), B("skin_sys_colors",0),
-    A("skin_exclude",""), B("skin_disable_native",0), B("skin_override_focused",1),
-    B("skin_override_unfocused",1),
-    /* wine buttons / progress */
-    S("wine_btn_face",""), S("wine_btn_text",""), S("wine_btn_highlight",""),
-    S("wine_progress",""), S("wine_accent",""),
-    /* theme labs */
-    O("custom_themes"),
-    S("lab_shell_name",""), S("lab_shell_base","dark"), S("lab_shell_bg",""), S("lab_shell_alt",""),
-    S("lab_shell_bar",""), S("lab_shell_start",""), S("lab_shell_rail",""), S("lab_shell_accent",""),
-    S("lab_shell_text",""),
-    S("lab_win_name",""), S("lab_win_layout",""), S("lab_win_shape",""), S("lab_win_glyph",""),
-    S("lab_win_align",""), S("lab_win_cap",""), S("lab_win_grad",""), S("lab_win_cap_off",""),
-    S("lab_win_text",""), S("lab_win_text_off",""), S("lab_win_border",""), S("lab_win_border_off",""),
-    S("lab_win_hover",""), S("lab_win_base","windows10"),
-    S("lab_img_min",""), S("lab_img_max",""), S("lab_img_restore",""), S("lab_img_close",""),
-    S("lab_img_pin",""), S("lab_img_snap",""), S("lab_img_shade",""),
-    /* cursors */
-    B("cursor_enabled",0), S("cursor_preset","windows10"),
-    S("cursor_arrow",""), S("cursor_ibeam",""), S("cursor_wait",""), S("cursor_appstarting",""),
-    S("cursor_cross",""), S("cursor_hand",""), S("cursor_help",""), S("cursor_no",""),
-    S("cursor_sizeall",""), S("cursor_sizens",""), S("cursor_sizewe",""), S("cursor_sizenwse",""),
-    S("cursor_sizenesw",""), S("cursor_uparrow",""), S("cursor_grab",""), S("cursor_grabbing",""),
-    /* keyboard */
-    B("kbd_auto",0), B("kbd_use_android",1), I("kbd_height",38), I("kbd_opacity",96),
-    B("kbd_pan",1), I("kbd_hide_delay",2), A("kbd_exclude",""),
-    /* file manager */
-    B("builtin_filemanager",1), S("fm_view","details"), B("fm_show_hidden",0),
-    I("fm_icon_size",64), A("fm_favorites",""), A("fm_bookmarks",""), N("fm_home"), N("fm_pc"),
-    O("fm_folder_icons"), A("fm_open_with",""), O("fm_assoc"), A("fm_pins",""),
-    /* desktop */
-    B("full_desktop",0), I("grid_size",96), B("grid_snap",1), B("show_desktop_icons",1),
-    S("wallpaper",""), S("wallpaper_mode","fill"), S("desktop_color","#1E3A5F"),
-    A("desktop_extra",""), A("desktop_hidden",""), O("desktop_layout"), B("desktop_autopin",1),
-    /* startup */
-    B("autostart",0),
-    /* apps */
-    A("pinned","explorer.exe"), A("start_apps",""),
+    B("bar_mirror",0), B("bar_float",0), I("bar_margin",0), I("bar_gap",8), S("bar_style","flat"),
+    B("reserve_work_area",1), B("bar_autohide",0), I("reveal_seconds",5),
+    B("show_separator",1), B("show_preview_button",1), B("tray_icons",1), B("hide_wine_taskbar",0),
+    S("clock_format","%I:%M %p\n%d-%m-%Y"), S("clock_timezone","india"), I("clock_utc_offset",330), I("clock_offset",0),
+    B("search_box",0), I("search_w",220), S("search_text","Type here to search"),
+    S("start_style","ninebox"), I("start_btn_w",0), I("start_btn_h",0), I("start_icon_scale",100),
+    I("desk_w",10), I("clock_w",100), I("tray_cell",24),
+    O("elements"),
+    /* ---- reveal bar ---- */
+    B("strip_enabled",0), S("strip_pos","center"), I("strip_width",40), I("strip_height",6),
+    S("strip_color",""), I("strip_opacity",80), I("strip_seconds",4), A("strip_exclude",""),
+    B("strip_maximized",0),
+    /* ---- start panel ---- */
+    S("start_theme","windows10"), S("start_size","normal"), I("tile_level",4),
+    I("tile_w_adj",100), I("tile_h_adj",100), I("list_w",290), I("rail_w",48), I("avatar_size",40),
+    I("list_row_h",40), I("search_h",32), I("pane_w",230),
+    B("start_rounded",0), B("start_list_collapsed",0), B("start_tiles_collapsed",0),
+    S("start_rail_pos","left"), S("start_tiles_side","right"), S("start_pane","tiles"),
+    B("start_search_in_bar",0), S("start_bg_image",""), I("start_opacity",100),
+    B("start_show_recent",1), B("start_show_most_used",1), B("start_programs_mode",0),
+    S("tile_color_mode","multi"), O("tile_sizes"), O("tile_colors"), B("tile_shuffle",0), I("tile_shuffle_seconds",8),
+    O("app_usage"), A("app_recent",""), A("start_apps",""),
     A("start_pins","explorer.exe|control.exe|cmd.exe|taskmgr.exe|regedit.exe|notepad.exe"),
-    S("user_name","User"), S("user_photo",""), B("reserve_work_area",1),
+    A("pane_items","documents|pictures|music|computer|controlpanel|run"),
+    O("pane_custom"), S("user_name","User"), S("user_photo",""),
+    /* ---- animations ---- */
+    B("animations",1), I("anim_ms",160),
+    B("anim_bar_on",1), S("anim_bar_dir","auto"), I("anim_bar_ms",220),
+    B("anim_start_on",1), S("anim_start_dir","auto"), I("anim_start_ms",180),
+    B("anim_app_on",0), S("anim_app_dir","up"), I("anim_app_ms",200),
+    B("anim_app_close_on",0), S("anim_app_close_dir","down"), I("anim_app_close_ms",160),
+    /* ---- window title bar (skin) ---- */
+    B("skin_enabled",1), S("skin_theme","windows10"), O("skin_custom_themes"), S("skin_color_mode","theme"),
+    S("skin_color",""), B("skin_hide_native",0), I("skin_height",31),
+    B("skin_btn_pin",1), B("skin_btn_snap",0), B("skin_btn_shade",0), B("skin_click_anim",1),
+    O("skin_btn_hover"), A("skin_exclude",""),
+    /* ---- wine controls (system colours) ---- */
+    B("ctrl_enabled",0), S("ctrl_preset","windows10"), O("ctrl_colors"),
+    /* ---- theme labs ---- */
+    O("custom_themes"),
+    /* ---- misc ---- */
+    B("autostart",0), A("pinned","explorer.exe"), A("run_history",""),
 };
 
 #undef S
@@ -170,9 +144,6 @@ void cfg_load(void) {
             json_put(data, "clock_format", json_str("%I:%M %p\n%d-%m-%Y"));
         JNode *sca = json_get(data, "show_close_all");
         if (sca && !json_get(data, "show_preview_button")) json_put(data, "show_preview_button", json_clone(sca));
-        JNode *lock = json_get(data, "lock_taskbar");
-        if (lock && !json_get(data, "fs_mode"))
-            json_put(data, "fs_mode", json_str(lock->b ? "resize" : "hide"));
         for (JNode *c = data->child; c; c = c->next)
             if (c->key) json_put(g_cfg, c->key, json_clone(c));
     } else {

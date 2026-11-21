@@ -19,20 +19,57 @@ void app_run(const wchar_t *target, const wchar_t *params, int show) {
         ShellExecuteW(NULL, L"open", target, params, NULL, show ? show : SW_SHOWNORMAL);
 }
 
+/* ---- themed popup menus: owner-drawn so they follow the selected theme ---- */
+typedef struct { wchar_t label[128]; int grayed, checked; } MenuItem;
+static MenuItem g_mi[128]; static int g_nmi; static HBRUSH g_menu_brush;
+
 int app_popup(HWND owner, const wchar_t **labels, const int *ids, const int *flags, int n,
               UINT tpm_flags, int x, int y) {
-    HMENU m = CreatePopupMenu(); POINT pt; GetCursorPos(&pt);
-    for (int i = 0; i < n; i++) {
+    HMENU m = CreatePopupMenu(); POINT pt; GetCursorPos(&pt); Theme th = app_theme(1);
+    if (g_menu_brush) DeleteObject(g_menu_brush);
+    g_menu_brush = CreateSolidBrush(th.bg);
+    MENUINFO mi; memset(&mi, 0, sizeof mi); mi.cbSize = sizeof mi; mi.fMask = MIM_BACKGROUND | MIM_APPLYTOSUBMENUS; mi.hbrBack = g_menu_brush; SetMenuInfo(m, &mi);
+    g_nmi = 0;
+    for (int i = 0; i < n && g_nmi < 128; i++) {
         if (!labels[i]) { AppendMenuW(m, MF_SEPARATOR, 0, NULL); continue; }
-        wchar_t buf[256]; int k = 0;                      /* escape '&' so titles never become mnemonics */
-        for (const wchar_t *p = labels[i]; *p && k < 253; p++) { if (*p == L'&') buf[k++] = L'&'; buf[k++] = *p; }
-        buf[k] = 0;
-        AppendMenuW(m, MF_STRING | (UINT)(flags ? flags[i] : 0), (UINT_PTR)ids[i], buf);
+        MenuItem *it = &g_mi[g_nmi++]; lstrcpynW(it->label, labels[i], 128);
+        it->grayed = flags && (flags[i] & MF_GRAYED); it->checked = flags && (flags[i] & MF_CHECKED);
+        AppendMenuW(m, MF_OWNERDRAW | (it->grayed ? MF_GRAYED : 0), (UINT_PTR)ids[i], (LPCWSTR)it);
     }
     SetForegroundWindow(owner); g_menu_depth++;
     int cmd = (int)TrackPopupMenu(m, tpm_flags, x == POPUP_CUR ? pt.x : x, y == POPUP_CUR ? pt.y : y, 0, owner, NULL);
     g_menu_depth--; DestroyMenu(m);
     return cmd;
+}
+
+LRESULT app_menu_msg(UINT msg, WPARAM wp, LPARAM lp, int *handled) {
+    *handled = 0;
+    if (msg == WM_MEASUREITEM) {
+        MEASUREITEMSTRUCT *mi = (MEASUREITEMSTRUCT *)lp; MenuItem *it = (MenuItem *)mi->itemData;
+        if (mi->CtlType != ODT_MENU || it < g_mi || it >= g_mi + 128) return 0;
+        HDC dc = GetDC(NULL); HGDIOBJ o = SelectObject(dc, g_font); SIZE sz = { 0, 0 };
+        GetTextExtentPoint32W(dc, it->label, lstrlenW(it->label), &sz); SelectObject(dc, o); ReleaseDC(NULL, dc);
+        mi->itemWidth = (UINT)(sz.cx + px(64)); mi->itemHeight = (UINT)px(30); *handled = 1; return TRUE;
+    }
+    if (msg == WM_DRAWITEM) {
+        DRAWITEMSTRUCT *d = (DRAWITEMSTRUCT *)lp; MenuItem *it = (MenuItem *)d->itemData;
+        if (d->CtlType != ODT_MENU || it < g_mi || it >= g_mi + 128) return 0;
+        Theme th = app_theme(1); int sel = (d->itemState & ODS_SELECTED) && !it->grayed;
+        g_fill(d->hDC, d->rcItem, sel ? c_mix(th.bg, th.accent, 0.38) : th.bg);
+        SetBkMode(d->hDC, TRANSPARENT); HGDIOBJ o = SelectObject(d->hDC, g_font);
+        RECT t = { d->rcItem.left + px(34), d->rcItem.top, d->rcItem.right - px(10), d->rcItem.bottom };
+        g_text(d->hDC, it->label, t, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, it->grayed ? th.dim : th.text);
+        if (it->checked) { RECT c = { d->rcItem.left + px(8), d->rcItem.top + px(7), d->rcItem.left + px(24), d->rcItem.bottom - px(7) }; glyph_draw(G_CHEVRON_D, d->hDC, c, th.accent); }
+        SelectObject(d->hDC, o); *handled = 1; return TRUE;
+    }
+    (void)wp; return 0;
+}
+
+void apply_alpha(HWND h, int a) {
+    LONG_PTR ex = GetWindowLongPtrW(h, GWL_EXSTYLE);
+    if (!(ex & WS_EX_LAYERED)) SetWindowLongPtrW(h, GWL_EXSTYLE, ex | WS_EX_LAYERED);
+    if (a < 1) a = 1; if (a > 255) a = 255;
+    SetLayeredWindowAttributes(h, 0, (BYTE)a, LWA_ALPHA);
 }
 
 int app_confirm(HWND owner, const wchar_t *title, const wchar_t *text) {
@@ -69,8 +106,8 @@ static void set_autostart(void) {
 }
 
 void app_apply_all(void) {
-    apply_fonts(); g_glass_clear();
-    bar_apply(); start_apply(); set_autostart();
+    apply_fonts(); g_glass_clear(); img_clear();
+    bar_apply(); start_apply(); skin_apply(); reveal_apply(); sys_apply(); set_autostart(); settings_refresh();
 }
 
 void app_reload(void) {
@@ -89,7 +126,7 @@ void app_shutdown(void) {
     bar_restore_work_area();
     HWND wine = FindWindowW(L"Shell_TrayWnd", NULL);
     if (wine) ShowWindow(wine, SW_SHOW);
-    start_destroy(); tray_close(); g_glass_clear(); icons_close();
+    skin_shutdown(); reveal_destroy(); settings_destroy(); start_destroy(); tray_close(); g_glass_clear(); icons_close();
     if (g_font) DeleteObject(g_font);
     if (g_font_big) DeleteObject(g_font_big);
     if (g_font_small) DeleteObject(g_font_small);

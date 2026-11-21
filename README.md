@@ -1,62 +1,38 @@
-# WinShell (C port)
+# WinShell (C port, v7 feature set)
 
-Taskbar + Start menu for Winlator / Wine, ported from the Python `TaskbarG.py` (WinShell v7).
-Uses the **same `config.json`** (`%PROGRAMDATA%\WinShell\config.json`), so settings carry over.
+Taskbar, Start panel, title bars and Wine colours for Winlator / Wine. C port of `TaskbarH.py`.
+Uses the same `config.json` (`%PROGRAMDATA%\WinShell\config.json`). Right-click the taskbar > **Settings**.
 
-## Get the .exe from GitHub
-1. Create a repo and push this folder (keep the `.github/workflows/build.yml` path).
-2. Open the **Actions** tab, run **Build WinShell.exe** (it also runs on every push).
-3. Download the `WinShell-exe` artifact: `WinShell-x64.exe` and `WinShell-x86.exe`.
-4. To publish a release: `git tag v7.0.0 && git push --tags` – the exes are attached automatically.
+## Build (GitHub)
+Push this folder, open **Actions > Build WinShell.exe > Run workflow**. Artifacts: `WinShell-exe`
+(`WinShell-x64.exe`, `WinShell-x86.exe`) and **`build-log`** (`build.log`, `errors.log`, `warnings.log`).
+The run page shows a build report with errors/warnings, and compile errors are annotated on the source lines.
+`make -k` is used, so one run lists every error for both builds. Tag `v7.x.y` to attach the exes to a release.
 
-## Build locally
-```
-sudo apt install gcc-mingw-w64-x86-64 gcc-mingw-w64-i686
-make            # dist/WinShell-x64.exe and dist/WinShell-x86.exe
-```
-On Windows with MSYS2 MinGW: `make native CC=gcc`.
+Local: `sudo apt install gcc-mingw-w64-x86-64 gcc-mingw-w64-i686 && make`.
+No MinGW? `tools/syntax-check/check.sh` type-checks all sources against stub headers.
 
-## Run
-`WinShell.exe` – starts the taskbar. `--restart` (used by the power menu), `--open <path>`.
-Only one instance runs (mutex `WinShell.Taskbar.Mutex`).
+## Your 13 requests
 
-## What is ported
-| Area | Status |
-|---|---|
-| config.json load/save, all default keys, migrations, live reload on file change | done |
-| Themes (12 built-in + `custom_themes`), accent, bar colour, adaptive text colours, scale, fonts | done |
-| Glass look (gradient + gloss + hairlines), layered opacity, rounded bar, detach | done |
-| Taskbar: position top/bottom, align left/centre/right, pinned apps, running windows grouped by exe | done |
-| Shell-hook + timer window tracking, flashing windows, active underline, icon accent colour | done |
-| Click to launch/minimise/restore, window list for multi-window apps, middle-click launch | done |
-| Drag to reorder pinned apps (saved to config) | done |
-| Right-click menus (entry menu, bar menu), pin/unpin, always on top, end task, open file location | done |
-| Clock (format, India/system/custom timezone, offset), show-desktop button | done |
-| Tray icons grabbed from the Wine tray, click / right-click / double-click forwarded | done |
-| Hide Wine taskbar, reserve work area (restored on exit) | done |
-| Full-screen / maximised handling (`show`/`resize`/`hide`), auto-hide, edge reveal + fade | done |
-| Start menu: app list (Start Menu .lnk scan + built-ins + `start_apps`), search, Run, recent / most used, pinned tiles (medium/wide/large), rail, power menu, add app | done |
-| Autostart (`autostart` -> HKCU Run key), single instance | done |
+| # | Request | Where / status |
+|---|---|---|
+| 1 | Left / right (vertical) taskbar and reveal bar | Settings > Taskbar > Position; reveal strip follows the same edge |
+| 2 | Right pane (links) that switches with pinned tiles | Start panel > "Right pane shows", switch button on the pane; **Right pane links**: on/off, order, icon, colour |
+| 3 | Start panel styles that follow the original systems | Start panel style: Win 10 / 8 / 11 / 7 / XP / 98, Zorin, macOS, GNOME, Ubuntu, Mint, KDE, Xfce, Arch (4 layouts: tiles, two-column, icon grid, classic). Layout and metrics follow each OS; they are not pixel copies |
+| 4 | Removed | custom cursors, all keyboard features, file manager, full-screen-app section |
+| 5 | Cortana-style search in the taskbar | Search box: on/off, width, text; option to move the Start panel's search into it |
+| 6 | Size customisation | Start panel 5 levels (+ full), tiles 8 levels, tile width/height %, start button size + width/height, desktop button width, search width, profile picture, power column, app list width/row height, pane width |
+| 7 | Animations (slide left / right / up / down) | Taskbar, Start panel, programs opening, programs closing; each with on/off, direction, speed slider |
+| 8 | Nine-box Start icon, icon/colour/position/visibility for every element | Default Start icon is nine boxes. Layout editor: drag elements on the taskbar and on the Start panel; per element on/off, any .png/.ico/.jpg/.bmp icon, any colour. Positions are relative, so they adapt to bar size |
+| 9 | Title bar fixes | Bar kept directly above its window (event hook + 40 ms check), window and bar move together, per-button hover colours, click ripple, optional removal of Wine's own title bar |
+| 10 | Random shuffle | Personalization: shuffle theme (palette, title bar style, Wine colours); Tile colours: shuffle sizes and colours of tiles |
+| 11 | Programs button | Power column: groups Start-menu folders and Program Files, expandable like Windows |
+| 12 | Wine controls | 30 colour slots (window, controls/buttons, tickbox/radio/dropdown frames, menu, menu bar, tooltip, scroll bar, selection, workspace, title bars) and 20 OS presets |
+| 13 | Reveal bar opacity down to 0, error log in build.yml | Done |
 
-## Not ported yet (config keys are kept, but no UI/behaviour)
-Settings window, setup wizard, built-in file manager (Explorer is launched instead),
-desktop icons / wallpaper, window title-bar skin overlay + skin themes, custom cursors,
-touch keyboard (button launches `osk.exe`), hover/window previews (the button shows a window list),
-reveal strip, floating reveal icon, tile drag-and-drop and shuffle, wallpaper-blur glass,
-themed owner-drawn menus (standard Windows popup menus are used), account photo.
-`Settings` in the Start rail opens `config.json` in Notepad.
-
-## Layout
-```
-src/json.c      JSON parser/writer (output identical to Python json.dump indent=2)
-src/config.c    defaults + load/save
-src/util.c      colours, clock, .lnk parser, paths
-src/theme.c     themes, px(), bar/work rects
-src/gdi.c       fonts, alpha, gradients, glass cache
-src/icons.c     icon extraction + accent colour
-src/tray.c      Wine tray host
-src/taskbar.c   the taskbar window
-src/startmenu.c the Start menu
-src/app.c       run/popup/reload/shutdown glue
-src/main.c      entry point
-```
+## Honest limits
+- Not yet run on a real Windows/Wine machine: the code is type-checked, not runtime-tested. Report anything odd.
+- Wine controls: Wine has no per-control hover colour. Hot-tracking and menu-highlight are exposed; message boxes use the window/button colours. Colours are written to `HKCU\Control Panel\Colors` and applied live with `SetSysColors`.
+- Title bars: in the default mode the bar covers the native one (same height). "Disable Wine's own title bar" changes the window style, which a few programs dislike; it is off by default and fully reversible.
+- Program close animation runs when closing from WinShell (taskbar menu, custom title bar). A program closing itself cannot be animated from outside.
+- Start panel list rows are not draggable; the other Start elements are.

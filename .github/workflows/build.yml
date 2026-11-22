@@ -21,8 +21,59 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-mingw-w64-x86-64 gcc-mingw-w64-i686 binutils-mingw-w64-x86-64 binutils-mingw-w64-i686
 
+      # -k keeps going after an error, so one run lists every compile error for both the 64-bit and 32-bit builds.
       - name: Build (64-bit and 32-bit)
-        run: make -j"$(nproc)"
+        id: build
+        shell: bash
+        run: |
+          set -o pipefail
+          make -k -j"$(nproc)" 2>&1 | tee build.log
+
+      # Always runs, also when the build failed: error log, annotations and a summary on the run page.
+      - name: Error log
+        if: always()
+        shell: bash
+        run: |
+          touch build.log
+          grep -E "(error|fatal error|undefined reference|Error [0-9]+)" build.log > errors.log || true
+          grep -E "warning:" build.log > warnings.log || true
+          {
+            echo "## WinShell build report"
+            echo ""
+            echo "- Errors: $(wc -l < errors.log)"
+            echo "- Warnings: $(wc -l < warnings.log)"
+            if [ -s errors.log ]; then
+              echo ""
+              echo "### Errors"
+              echo '```'
+              head -n 60 errors.log
+              echo '```'
+            fi
+            if [ -s warnings.log ]; then
+              echo ""
+              echo "<details><summary>Warnings</summary>"
+              echo ""
+              echo '```'
+              head -n 60 warnings.log
+              echo '```'
+              echo "</details>"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          # inline annotations on the offending source lines
+          sed -nE 's#^(src/[^:]+):([0-9]+):([0-9]+): (fatal error|error): (.*)#::error file=\1,line=\2,col=\3::\5#p' build.log
+          sed -nE 's#^(src/[^:]+):([0-9]+):([0-9]+): warning: (.*)#::warning file=\1,line=\2,col=\3::\4#p' build.log | head -n 40
+          if [ -s errors.log ]; then echo "---- last lines of build.log ----"; tail -n 60 build.log; fi
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: |
+            build.log
+            errors.log
+            warnings.log
+          if-no-files-found: ignore
 
       - name: Show result
         run: ls -l dist

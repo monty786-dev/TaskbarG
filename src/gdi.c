@@ -121,3 +121,16 @@ void g_glass_blit(HDC dc, int slot, int w, int h, COLORREF base) {
 void g_glass_clear(void) {
     for (int i = 0; i < 2; i++) { if (g_cache[i].bmp) DeleteObject(g_cache[i].bmp); memset(&g_cache[i], 0, sizeof g_cache[i]); }
 }
+
+/* Draw an icon at reduced opacity: blend (background + icon) over the background. */
+void g_icon_a(HDC dc, HICON ic, int x, int y, int size, int alpha_pct) {
+    if (!ic) return;
+    if (alpha_pct >= 100) { DrawIconEx(dc, x, y, ic, size, size, 0, NULL, DI_NORMAL); return; }
+    if (alpha_pct <= 0) return;
+    HDC mem = CreateCompatibleDC(dc); HBITMAP bmp = CreateCompatibleBitmap(dc, size, size); HGDIOBJ old = SelectObject(mem, bmp);
+    BitBlt(mem, 0, 0, size, size, dc, x, y, SRCCOPY); DrawIconEx(mem, 0, 0, ic, size, size, 0, NULL, DI_NORMAL);
+    BLENDFUNCTION bf = { AC_SRC_OVER, 0, (BYTE)(255 * alpha_pct / 100), 0 };
+    AlphaBlend(dc, x, y, size, size, mem, 0, 0, size, size, bf);
+    SelectObject(mem, old); DeleteObject(bmp); DeleteDC(mem);
+}
+COLORREF g_mixa(COLORREF bg, COLORREF fg, int alpha_pct) { if (alpha_pct >= 100) return fg; if (alpha_pct < 0) alpha_pct = 0; return c_mix(bg, fg, alpha_pct / 100.0); }

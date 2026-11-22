@@ -1,62 +1,39 @@
 # WinShell (C port)
 
-Taskbar + Start menu for Winlator / Wine, ported from the Python `TaskbarG.py` (WinShell v7).
-Uses the **same `config.json`** (`%PROGRAMDATA%\WinShell\config.json`), so settings carry over.
+Taskbar, Start panel, full desktop, game mode, title bars and Wine colours for Winlator / Wine.
+Uses `config.json` in `%PROGRAMDATA%\WinShell`. Right-click the taskbar > **Settings**.
+Command line: `WinShell.exe [--game] [--restart] [--open <path>]`.
 
-## Get the .exe from GitHub
-1. Create a repo and push this folder (keep the `.github/workflows/build.yml` path).
-2. Open the **Actions** tab, run **Build WinShell.exe** (it also runs on every push).
-3. Download the `WinShell-exe` artifact: `WinShell-x64.exe` and `WinShell-x86.exe`.
-4. To publish a release: `git tag v7.0.0 && git push --tags` – the exes are attached automatically.
+## Build on GitHub
+1. Upload this whole folder to a repository (keep `.github/workflows/build.yml`).
+2. **Actions > Build WinShell.exe > Run workflow**.
+3. Download artifact **WinShell-exe** (`WinShell-x64.exe`, `WinShell-x86.exe`). Failed? Download **build-log** (`build.log`, `errors.log`, `warnings.log`); the run page also shows a report and marks the failing lines.
+4. Tag `v7.1.0` to attach the exes to a release.
 
-## Build locally
-```
-sudo apt install gcc-mingw-w64-x86-64 gcc-mingw-w64-i686
-make            # dist/WinShell-x64.exe and dist/WinShell-x86.exe
-```
-On Windows with MSYS2 MinGW: `make native CC=gcc`.
+Local: `sudo apt install gcc-mingw-w64-x86-64 gcc-mingw-w64-i686 && make`. Without MinGW: `tools/syntax-check/check.sh` type-checks everything against stub headers.
 
-## Run
-`WinShell.exe` – starts the taskbar. `--restart` (used by the power menu), `--open <path>`.
-Only one instance runs (mutex `WinShell.Taskbar.Mutex`).
+## Latest update (11 requests)
+| # | Request | Where |
+|---|---|---|
+| 1 | Auto-hide with the reveal bar | Taskbar > Reveal bar: "Auto-hide the taskbar" + reveal time; hover/click the strip brings the bar back |
+| 2 | Wine / desktop shortcuts <-> Start list and tiles | Full desktop > Shortcuts sync. New `.lnk/.exe/.url` in the user and Public Desktop folders go to the Start app list **and** tiles; Start apps/tiles appear on the WinShell desktop (checked every ~10 s) |
+| 3 | Add an application to the tray | Right-click a program (taskbar / Start / desktop) > **Add to tray**, or Taskbar > Tray apps. Click = open, right-click = remove |
+| 4 | Move anything freely, resize, auto toggles | Taskbar > Layout editor / Start panel > Start elements. Drag to move anywhere, drag the corner square to resize, right-click: **Auto position ON/OFF**, **Auto size ON/OFF**, Reset, **Auto-adapt ALL**. Covers every taskbar element, the running-app group (icon size / button width), the Start **app list window** and **pinned tiles window** |
+| 5 | App list and tiles up / down | Start panel: "Pinned tiles / links side" = Above / Below the app list, split slider |
+| 6 | Full desktop mode | Settings > Full desktop: wallpaper (fill/fit/stretch/center/tile), colour, movable + resizable shortcuts, app tiles, clock / calendar / system widgets, per-item and global move lock, grid snap |
+| 7 | Game mode | Settings > Game mode (or taskbar menu, or `--game`): PlayStation 5, Steam Big Picture, Nintendo Switch, Xbox, retro list. Per game: icon/cover, background, description, colour, start arguments. Keyboard, mouse and XInput controller; returns to game mode when the game closes |
+| 8 | Start panel size / position | Start panel sizes: width, height, move up/down/left/right, tiles window w/h, app list height, power column length + width, profile picture |
+| 9 | Start button icon | Taskbar > Start button: style, size, width/height, colour, **your own image** |
+| 10 | Transparency | Appearance > Transparency: icon and text visibility for the taskbar and the Start panel |
+| 11 | Window preview button | Live thumbnails of every window; click = go to it; X = close; pin = always on top; **Close all windows**; right-click for more |
+| - | App icon | Nine-box icon embedded in the exe (`src/winshell.ico`, `assets/winshell-icon.png`) |
 
-## What is ported
-| Area | Status |
-|---|---|
-| config.json load/save, all default keys, migrations, live reload on file change | done |
-| Themes (12 built-in + `custom_themes`), accent, bar colour, adaptive text colours, scale, fonts | done |
-| Glass look (gradient + gloss + hairlines), layered opacity, rounded bar, detach | done |
-| Taskbar: position top/bottom, align left/centre/right, pinned apps, running windows grouped by exe | done |
-| Shell-hook + timer window tracking, flashing windows, active underline, icon accent colour | done |
-| Click to launch/minimise/restore, window list for multi-window apps, middle-click launch | done |
-| Drag to reorder pinned apps (saved to config) | done |
-| Right-click menus (entry menu, bar menu), pin/unpin, always on top, end task, open file location | done |
-| Clock (format, India/system/custom timezone, offset), show-desktop button | done |
-| Tray icons grabbed from the Wine tray, click / right-click / double-click forwarded | done |
-| Hide Wine taskbar, reserve work area (restored on exit) | done |
-| Full-screen / maximised handling (`show`/`resize`/`hide`), auto-hide, edge reveal + fade | done |
-| Start menu: app list (Start Menu .lnk scan + built-ins + `start_apps`), search, Run, recent / most used, pinned tiles (medium/wide/large), rail, power menu, add app | done |
-| Autostart (`autostart` -> HKCU Run key), single instance | done |
+Earlier features (vertical bars, OS themes, Start layouts, animations, title bars, Wine colours, shuffle) are unchanged; see Settings.
 
-## Not ported yet (config keys are kept, but no UI/behaviour)
-Settings window, setup wizard, built-in file manager (Explorer is launched instead),
-desktop icons / wallpaper, window title-bar skin overlay + skin themes, custom cursors,
-touch keyboard (button launches `osk.exe`), hover/window previews (the button shows a window list),
-reveal strip, floating reveal icon, tile drag-and-drop and shuffle, wallpaper-blur glass,
-themed owner-drawn menus (standard Windows popup menus are used), account photo.
-`Settings` in the Start rail opens `config.json` in Notepad.
-
-## Layout
-```
-src/json.c      JSON parser/writer (output identical to Python json.dump indent=2)
-src/config.c    defaults + load/save
-src/util.c      colours, clock, .lnk parser, paths
-src/theme.c     themes, px(), bar/work rects
-src/gdi.c       fonts, alpha, gradients, glass cache
-src/icons.c     icon extraction + accent colour
-src/tray.c      Wine tray host
-src/taskbar.c   the taskbar window
-src/startmenu.c the Start menu
-src/app.c       run/popup/reload/shutdown glue
-src/main.c      entry point
-```
+## Honest limits
+- Not run on a real Wine/Windows machine yet; the code is type-checked only. Send the build log or any odd behaviour and I will fix it.
+- Sync creates items inside WinShell's own desktop; it does not write real `.lnk` files.
+- "Add to tray" means launcher icons in the tray area, not "minimise to tray".
+- Wine's `PrintWindow` can return blank thumbnails for some programs; the preview then shows the program icon.
+- Game mode themes imitate each console's layout and colours; they are not pixel copies. Controller needs Wine to expose XInput.
+- Start app-list rows are not draggable; the app list and tiles windows themselves are.

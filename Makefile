@@ -15,8 +15,8 @@ all: dist/WinShell-x64.exe dist/WinShell-x86.exe
 
 build/%-x64.o: src/%.c src/app.h src/json.h ; @mkdir -p build ; $(CC64) $(CFLAGS) -c $< -o $@
 build/%-x86.o: src/%.c src/app.h src/json.h ; @mkdir -p build ; $(CC32) $(CFLAGS) -c $< -o $@
-build/res-x64.o: src/winshell.rc src/winshell.manifest ; @mkdir -p build ; cd src && $(WINDRES64) winshell.rc -O coff -o ../$@
-build/res-x86.o: src/winshell.rc src/winshell.manifest ; @mkdir -p build ; cd src && $(WINDRES32) winshell.rc -O coff -o ../$@
+build/res-x64.o: src/winshell.rc src/winshell.manifest src/winshell.ico ; @mkdir -p build ; cd src && $(WINDRES64) winshell.rc -O coff -o ../$@
+build/res-x86.o: src/winshell.rc src/winshell.manifest src/winshell.ico ; @mkdir -p build ; cd src && $(WINDRES32) winshell.rc -O coff -o ../$@
 
 OBJ64 := $(patsubst src/%.c,build/%-x64.o,$(SRC)) build/res-x64.o
 OBJ32 := $(patsubst src/%.c,build/%-x86.o,$(SRC)) build/res-x86.o

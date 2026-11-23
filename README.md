@@ -12,28 +12,30 @@ Command line: `WinShell.exe [--game] [--restart] [--open <path>]`.
 
 Local: `sudo apt install gcc-mingw-w64-x86-64 gcc-mingw-w64-i686 && make`. Without MinGW: `tools/syntax-check/check.sh` type-checks everything against stub headers.
 
-## Latest update (11 requests)
+## Latest update (15 requests)
 | # | Request | Where |
 |---|---|---|
-| 1 | Auto-hide with the reveal bar | Taskbar > Reveal bar: "Auto-hide the taskbar" + reveal time; hover/click the strip brings the bar back |
-| 2 | Wine / desktop shortcuts <-> Start list and tiles | Full desktop > Shortcuts sync. New `.lnk/.exe/.url` in the user and Public Desktop folders go to the Start app list **and** tiles; Start apps/tiles appear on the WinShell desktop (checked every ~10 s) |
-| 3 | Add an application to the tray | Right-click a program (taskbar / Start / desktop) > **Add to tray**, or Taskbar > Tray apps. Click = open, right-click = remove |
-| 4 | Move anything freely, resize, auto toggles | Taskbar > Layout editor / Start panel > Start elements. Drag to move anywhere, drag the corner square to resize, right-click: **Auto position ON/OFF**, **Auto size ON/OFF**, Reset, **Auto-adapt ALL**. Covers every taskbar element, the running-app group (icon size / button width), the Start **app list window** and **pinned tiles window** |
-| 5 | App list and tiles up / down | Start panel: "Pinned tiles / links side" = Above / Below the app list, split slider |
-| 6 | Full desktop mode | Settings > Full desktop: wallpaper (fill/fit/stretch/center/tile), colour, movable + resizable shortcuts, app tiles, clock / calendar / system widgets, per-item and global move lock, grid snap |
-| 7 | Game mode | Settings > Game mode (or taskbar menu, or `--game`): PlayStation 5, Steam Big Picture, Nintendo Switch, Xbox, retro list. Per game: icon/cover, background, description, colour, start arguments. Keyboard, mouse and XInput controller; returns to game mode when the game closes |
-| 8 | Start panel size / position | Start panel sizes: width, height, move up/down/left/right, tiles window w/h, app list height, power column length + width, profile picture |
-| 9 | Start button icon | Taskbar > Start button: style, size, width/height, colour, **your own image** |
-| 10 | Transparency | Appearance > Transparency: icon and text visibility for the taskbar and the Start panel |
-| 11 | Window preview button | Live thumbnails of every window; click = go to it; X = close; pin = always on top; **Close all windows**; right-click for more |
-| - | App icon | Nine-box icon embedded in the exe (`src/winshell.ico`, `assets/winshell-icon.png`) |
+| 1 | Fake apps (image icon only) and "WinShell Settings" as an app | Settings > Apps > Fake and built-in apps: add an image, name it, optionally point it at a program or `winshell:settings`. Add any fake or built-in app (Settings, Game mode, desktop switch, layout editor) to the Start list, tiles, taskbar, desktop or tray |
+| 2 | Start panel parts behind the taskbar; elements that would not move | The taskbar now stays just below an open Start panel / preview instead of covering it. Moving is done in the new editor window (no window-edge limits) |
+| 3 | Special editor window | Taskbar menu > Layout editor... (or Settings > Layout editor): live preview of the taskbar or Start panel, zoom/pan, drag to move, corner square to resize, switches for visible (add/delete), auto position, auto size, sliders for X/Y/width/height, icon image, colour, reset, add a program |
+| 4 | Close Start when clicking elsewhere (on/off) | Start panel > "Close the Start panel when clicking anywhere else" |
+| 5 | App list and tiles views | Start panel: App list view = list / 2 columns / grid 2-5 / tiles (8 sizes); Pinned items view = tiles / grid 2-5 / 2 columns |
+| 6 | Open-app animation in Wine / Winlator | New windows are now found by polling (the shell hook is unreliable in Wine) and animated after their position settles |
+| 7 | Auto-hide only with the reveal bar | The auto-hide switch lives in Reveal bar and only works while the reveal bar is on |
+| 8 | Widget transparency and custom tiles | Widget / tile visibility 0-100 % (global slider, per-item menu), **image tiles**, app tiles |
+| 9 | Better game mode | Intro fade and slide-in, smooth selection scaling, cross-fading backgrounds, text slide, pulsing selection, hint bar |
+| 10 | Title bar | Bar stays directly above its window and is raised with it on focus change; real app icon (taken from the program's exe); title / icon / buttons alignment (left, middle, right); your own button icons; create and save title bar themes |
+| 11 | Toggle button groups | Short choice lists are shown as segmented button groups in Settings |
+| 12 | Backup and restore | Settings > Startup and user: one `.wsbk` file with settings, every image/icon the settings use, shortcuts, and the Wine / user Desktop shortcuts |
+| 13 | Desktop / normal mode button | Taskbar element and Start panel button (hidden by default; enable in the layout editor or Settings) |
+| 14 | OS theme in Personalization, random for all OS settings | Personalization: OS theme + Apply, **Random OS theme**, **Random everything** |
+| 15 | Icon shapes | Fill colour, first-letter badges for apps without an icon, **pill style** (buttons, switches, labels become colour-filled text-sized shapes) with a random colour shuffle |
 
-Earlier features (vertical bars, OS themes, Start layouts, animations, title bars, Wine colours, shuffle) are unchanged; see Settings.
+Earlier features are unchanged.
 
 ## Honest limits
-- Not run on a real Wine/Windows machine yet; the code is type-checked only. Send the build log or any odd behaviour and I will fix it.
-- Sync creates items inside WinShell's own desktop; it does not write real `.lnk` files.
-- "Add to tray" means launcher icons in the tray area, not "minimise to tray".
-- Wine's `PrintWindow` can return blank thumbnails for some programs; the preview then shows the program icon.
-- Game mode themes imitate each console's layout and colours; they are not pixel copies. Controller needs Wine to expose XInput.
-- Start app-list rows are not draggable; the app list and tiles windows themselves are.
+- Not run on a real Wine/Windows machine; the code is type-checked only. Send the `build-log` artifact or any odd behaviour and I will fix it.
+- Pill style covers Settings, the layout editor and the taskbar (clock, search box, window titles). The Start panel keeps normal shapes.
+- Open-app animation moves the window after it appears; a window that repositions itself again can fight it. Closing animations only run when closing from WinShell.
+- In the layout editor, vertical taskbars use "along / across the bar" for X / Y.
+- Backups copy images, icons, .lnk and .url files; programs (.exe) are not copied.

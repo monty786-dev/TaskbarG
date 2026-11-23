@@ -235,3 +235,4 @@ typedef struct { POINT ptReserved, ptMaxSize, ptMaxPosition, ptMinTrackSize, ptM
 #define VK_RIGHT 39
 #define VK_HOME 36
 #define VK_END 35
+#define OFN_OVERWRITEPROMPT 2

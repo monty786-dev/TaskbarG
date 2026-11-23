@@ -85,3 +85,5 @@ W_(BOOL) GlobalMemoryStatusEx(MEMORYSTATUSEX *); W_(ULONGLONG) GetTickCount64(vo
 
 typedef struct { DWORD cbSize, fMask; HWND hwnd; LPCWSTR lpVerb, lpFile, lpParameters, lpDirectory; int nShow; HINSTANCE hInstApp; void *lpIDList; LPCWSTR lpClass; HKEY hkeyClass; DWORD dwHotKey; HANDLE hIcon; HANDLE hProcess; } SHELLEXECUTEINFOW;
 W_(BOOL) ShellExecuteExW(SHELLEXECUTEINFOW *); W_(DWORD) WaitForSingleObject(HANDLE, DWORD);
+
+W_(HBITMAP) CreateBitmap(int, int, UINT, UINT, const void *); W_(HICON) CreateIconIndirect(ICONINFO *); W_(BOOL) CopyFileW(LPCWSTR, LPCWSTR, BOOL); W_(BOOL) GetSaveFileNameW(OPENFILENAMEW *); W_(DWORD) GetFileSize(HANDLE, LPDWORD); W_(BOOL) SHCreateDirectoryExW_(void);

@@ -48,7 +48,9 @@ COLORREF c_shade(COLORREF c, double f);
 COLORREF c_mix(COLORREF a, COLORREF b, double t);
 double   c_luminance(COLORREF c);
 COLORREF c_hex(const char *text, COLORREF def);
+COLORREF c_hsv(double h, double s, double v);
 void     format_clock(wchar_t *out, int n);
+void     clock_tm(struct tm *out);
 
 /* ----------------------------------------------------------------- theme */
 typedef struct {
@@ -64,6 +66,11 @@ int      app_is_dark(void);
 COLORREF app_accent(void);
 Theme    app_theme(int bar);                         /* bar=1 taskbar, 0 start */
 int      px(double v);
+int      bar_vertical(void);
+int      os_theme_count(void);
+const char *os_theme_name(int i);
+const char *os_theme_label(int i);
+void     os_theme_apply(const char *name);
 RECT     bar_rect(void);
 RECT     work_rect(void);
 void     screen_size(int *w, int *h);
@@ -80,6 +87,114 @@ void g_glass_blit(HDC dc, int slot, int w, int h, COLORREF base); /* slot 0=bar 
 void g_glass_clear(void);
 void apply_glass(HWND h, int on, int pct);
 int  in_rect(const RECT *r, int x, int y);
+
+/* -------------------------------------------------------- glyphs / elements */
+enum { G_NINEBOX, G_WINLOGO, G_POWER, G_GEAR, G_RUN, G_PROGRAMS, G_SYSTEM, G_COLLAPSE, G_SEARCH, G_USER, G_DESK,
+       G_PREVIEW, G_PLUS, G_SWITCH, G_CHEVRON_R, G_CHEVRON_D, G_FOLDER, G_DOC, G_PIC, G_MUSIC, G_PC, G_PANEL, G_HELP,
+       G_CLOSE, G_MIN, G_MAX, G_RESTORE, G_PIN, G_SNAP, G_SHADE, G_PLAY_, G_COUNT };
+void glyph_draw(int g, HDC dc, RECT r, COLORREF c);
+int  img_draw(HDC dc, const wchar_t *path, RECT r, COLORREF tint, int use_tint);
+void img_clear(void);
+
+enum { E_START, E_SEARCH, E_DESK, E_PREVIEW, E_CLOCK, E_TRAY, E_MODE, E_APPS,
+       E_SM_USER, E_SM_ADD, E_SM_SEARCH, E_SM_POWER, E_SM_SETTINGS, E_SM_RUN, E_SM_PROGRAMS, E_SM_SYSTEM,
+       E_SM_COLLAPSE, E_SM_SWITCH, E_SM_TILES, E_SM_LIST, E_SM_PANE, E_SM_MODE, E_COUNT };
+const char *el_id(int e);
+const char *el_label(int e);
+int      el_show(int e);
+void     el_set_show(int e, int on);
+void     el_offset(int e, int *dx, int *dy);
+void     el_set_offset(int e, int dx, int dy);
+void     el_reset_all(void);
+const char *el_icon(int e);
+void     el_set_icon(int e, const char *path);
+int      el_has_color(int e);
+COLORREF el_color(int e, COLORREF def);
+void     el_set_color(int e, const char *hex);
+void     el_draw(HDC dc, int e, RECT r, COLORREF def, int glyph);
+typedef struct { int dx, dy, aut, ax, ay, w, h, autosize; } Place;   /* aut: follow the automatic layout; autosize: automatic size */
+void     el_get_place(int e, Place *p);
+void     el_set_place(int e, const Place *p);
+RECT     el_apply(int e, RECT autor);          /* automatic rectangle -> final rectangle (offset / absolute / resized) */
+void     el_auto_all(void);                    /* everything back to automatic position, size and visibility */
+void     g_icon_a(HDC dc, HICON ic, int x, int y, int size, int alpha_pct);
+int      icon_is_generic(HICON ic);
+void     g_icon_name(HDC dc, HICON ic, const wchar_t *name, int x, int y, int size, int alpha_pct);   /* icon, or a colour-filled first-letter badge */
+void     g_badge(HDC dc, const wchar_t *name, RECT r, COLORREF fill);
+COLORREF pill_color(const wchar_t *text);
+RECT     g_pill(HDC dc, RECT slot, const wchar_t *text, int align, int active);   /* text-sized colour-filled shape; returns drawn rect */
+HICON    img_to_icon(const wchar_t *path, int size);
+int      img_cover(HDC dc, const wchar_t *path, RECT r, int alpha_pct);
+void     app_backup_save(HWND owner);
+void     app_backup_restore(HWND owner);
+void     app_toggle_desktop(void);
+void     shuffle_os(int everything);
+void     editor_open(int tab);
+HWND     editor_hwnd(void);
+void     editor_destroy(void);
+int      preview_visible(void);
+HWND     preview_hwnd(void);
+void     bar_render(HDC dc, int W, int H);
+int      bar_element_rects(int *ids, RECT *rc, int max, int *W, int *H);
+void     start_render(HDC dc, int W, int H);
+int      start_element_rects(int *ids, RECT *rc, int max, int *W, int *H);
+COLORREF g_mixa(COLORREF bg, COLORREF fg, int alpha_pct);
+int      img_fill(HDC dc, const wchar_t *path, int W, int H, const char *mode);   /* wallpaper */
+int      img_fill_a(HDC dc, const wchar_t *path, int W, int H, const char *mode, int alpha_pct);
+JNode   *fake_app(const wchar_t *path);
+
+/* ---------------------------------------------------------- wine colours */
+int  sys_preset_count(void);
+const char *sys_preset_name(int i);
+const char *sys_preset_label(int i);
+int  sys_slot_count(void);
+const char *sys_slot_key(int i);
+const char *sys_slot_label(int i);
+const char *sys_slot_group(int i);
+COLORREF sys_slot_color(int i);
+int  sys_slot_overridden(int i);
+void sys_slot_set(int i, const char *hex);
+void sys_preset_apply(int i);
+void sys_apply(void);
+void sys_restore(void);
+
+/* ------------------------------------------------------------ misc modules */
+int  theme_count(void);
+const char *theme_name(int i);
+void shuffle_theme(void);
+void shuffle_tiles(void);
+int  skin_theme_count(void);
+const char *skin_theme_name(int i);
+const char *skin_theme_label(int i);
+void skin_init(void);
+void skin_apply(void);
+void skin_tick(void);
+void skin_shutdown(void);
+void reveal_apply(void);
+void reveal_show(int on);
+void reveal_destroy(void);
+int  pane_link_count(void);
+const char *pane_link_id(int i);
+const char *pane_link_label(int i);
+int  pane_link_glyph(int i);
+void settings_open(int page);
+HWND settings_hwnd(void);
+void settings_refresh(void);
+void settings_destroy(void);
+extern int g_edit_layout;                 /* 0 off, 1 taskbar, 2 start panel */
+LRESULT app_menu_msg(UINT msg, WPARAM wp, LPARAM lp, int *handled);
+void apply_alpha(HWND h, int alpha255);
+
+/* ------------------------------------------------------------- animation */
+#define ANIM_END_NONE  0
+#define ANIM_END_HIDE  1
+#define ANIM_END_CLOSE 2
+void  anim_run(HWND h, RECT from, RECT to, int ms, int a_from, int a_to, int end, RECT restore);
+void  anim_cancel(HWND h);
+int   anim_busy(HWND h);
+RECT  anim_offset(RECT r, const char *dir, int dist);
+const char *anim_edge_dir(const char *pos);
+void  anim_window(HWND h, int closing);
 
 /* ----------------------------------------------------------------- icons */
 HICON  icon_for_window(HWND h, const wchar_t *exe);
@@ -129,15 +244,45 @@ int  bar_start_right(void);
 void bar_pin(const wchar_t *path);
 void bar_unpin(const wchar_t *key);
 HWND bar_hwnd(void);
+int  bar_is_hidden(void);
+RECT bar_start_screen_rect(void);
+int  bar_fg_excluded(void);
+void bar_reveal(int seconds);
+void settings_open_page(const char *name);
+const wchar_t *start_query(void);
+void start_open_search(void);
 void bar_close_all_windows(void);
 void bar_show_desktop(void);
 
 /* tray.c */
 int  tray_refresh(void);
 int  tray_width(void);
-void tray_draw(HDC dc, RECT area);
+void tray_draw(HDC dc, RECT area, int vertical);
+void tray_add_app(const wchar_t *path);
 int  tray_click(int x, int y, int button);   /* 0 left, 1 right, 2 double */
 void tray_close(void);
+
+/* desktop.c / gamemode.c */
+void desktop_apply(void);
+void desktop_tick(void);
+void desktop_sync(void);
+void desktop_destroy(void);
+void desktop_add_shortcut(const wchar_t *path, const char *type);
+void desktop_add_widget(const char *kind);
+void desktop_add_image(const wchar_t *img, const wchar_t *target);
+void desktop_arrange(void);
+void desktop_clear(void);
+void game_open(void);
+void game_close(void);
+void game_apply(void);
+void game_destroy(void);
+int  game_is_open(void);
+
+/* preview.c */
+int  bar_task_windows(HWND *out, int max);
+void preview_toggle(void);
+void preview_close(void);
+void preview_destroy(void);
 
 /* startmenu.c */
 extern int g_start_visible;

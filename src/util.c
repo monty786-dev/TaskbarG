@@ -173,6 +173,11 @@ void exe_for(const wchar_t *path, wchar_t *out, int n) {
 
 void display_name(const wchar_t *path, wchar_t *out, int n) {
     if (!wcscmp(path, L"::thispc")) { lstrcpynW(out, L"This PC", n); return; }
+    if (!wcsncmp(path, L"winshell:", 9)) {
+        const wchar_t *k = path + 9; const wchar_t *nm = !wcsncmp(k, L"settings", 8) ? L"WinShell Settings" : (!wcscmp(k, L"game") ? L"Game mode" : (!wcscmp(k, L"desktop") ? L"Desktop / normal mode" : (!wcscmp(k, L"layout") ? L"Layout editor" : L"WinShell")));
+        lstrcpynW(out, nm, n); return;
+    }
+    if (!wcsncmp(path, L"fake:", 5)) { JNode *f = fake_app(path); JNode *v = f ? json_get(f, "name") : NULL; w_from_utf8_buf(v && v->s && v->s[0] ? v->s : "App", out, n); return; }
     wchar_t tmp[MAX_PATH]; lstrcpynW(tmp, path, MAX_PATH);
     size_t l = wcslen(tmp);
     while (l && (tmp[l - 1] == L'\\' || tmp[l - 1] == L'/')) tmp[--l] = 0;
@@ -206,4 +211,24 @@ void window_process_path(HWND h, wchar_t *out, int n) {
     DWORD size = (DWORD)n;
     if (!QueryFullProcessImageNameW(p, 0, out, &size)) out[0] = 0;
     CloseHandle(p);
+}
+
+COLORREF c_hsv(double h, double s, double v) {
+    h = h - 360.0 * (int)(h / 360.0); if (h < 0) h += 360.0;
+    double c = v * s, hp = h / 60.0, m = v - c, hh = hp - 2.0 * (int)(hp / 2.0), x = c * (1.0 - (hh > 1.0 ? hh - 1.0 : 1.0 - hh));
+    double r = 0, g = 0, b = 0; int k = (int)hp % 6;
+    if (k == 0) { r = c; g = x; } else if (k == 1) { r = x; g = c; } else if (k == 2) { g = c; b = x; }
+    else if (k == 3) { g = x; b = c; } else if (k == 4) { r = x; b = c; } else { r = c; b = x; }
+    return RGB((int)((r + m) * 255 + 0.5), (int)((g + m) * 255 + 0.5), (int)((b + m) * 255 + 0.5));
+}
+
+void clock_tm(struct tm *out) {
+    time_t t = time(NULL) + (time_t)cfg_num("clock_offset") + zone_offset_s(); struct tm *tp = gmtime(&t);
+    if (tp) *out = *tp; else memset(out, 0, sizeof *out);
+}
+
+JNode *fake_app(const wchar_t *path) {
+    if (wcsncmp(path, L"fake:", 5) != 0) return NULL; char *id = utf8_from_w(path + 5); JNode *a = cfg_node("fake_apps"), *found = NULL;
+    for (JNode *c = a ? a->child : NULL; c && !found; c = c->next) { JNode *v = json_get(c, "id"); if (v && v->s && !strcmp(v->s, id)) found = c; }
+    free(id); return found;
 }

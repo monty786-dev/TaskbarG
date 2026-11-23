@@ -1,5 +1,7 @@
 #include "app.h"
 #include <string.h>
+#include <wctype.h>
+#define towupper_ towupper
 
 HFONT g_font, g_font_big, g_font_small;
 
@@ -120,4 +122,53 @@ void g_glass_blit(HDC dc, int slot, int w, int h, COLORREF base) {
 
 void g_glass_clear(void) {
     for (int i = 0; i < 2; i++) { if (g_cache[i].bmp) DeleteObject(g_cache[i].bmp); memset(&g_cache[i], 0, sizeof g_cache[i]); }
+}
+
+/* Draw an icon at reduced opacity: blend (background + icon) over the background. */
+void g_icon_a(HDC dc, HICON ic, int x, int y, int size, int alpha_pct) {
+    if (!ic) return;
+    if (alpha_pct >= 100) { DrawIconEx(dc, x, y, ic, size, size, 0, NULL, DI_NORMAL); return; }
+    if (alpha_pct <= 0) return;
+    HDC mem = CreateCompatibleDC(dc); HBITMAP bmp = CreateCompatibleBitmap(dc, size, size); HGDIOBJ old = SelectObject(mem, bmp);
+    BitBlt(mem, 0, 0, size, size, dc, x, y, SRCCOPY); DrawIconEx(mem, 0, 0, ic, size, size, 0, NULL, DI_NORMAL);
+    BLENDFUNCTION bf = { AC_SRC_OVER, 0, (BYTE)(255 * alpha_pct / 100), 0 };
+    AlphaBlend(dc, x, y, size, size, mem, 0, 0, size, size, bf);
+    SelectObject(mem, old); DeleteObject(bmp); DeleteDC(mem);
+}
+COLORREF g_mixa(COLORREF bg, COLORREF fg, int alpha_pct) { if (alpha_pct >= 100) return fg; if (alpha_pct < 0) alpha_pct = 0; return c_mix(bg, fg, alpha_pct / 100.0); }
+
+/* ---- no-icon apps: first letter on a colour-filled shape ---- */
+int icon_is_generic(HICON ic) { return !ic || ic == LoadIconW(NULL, IDI_APPLICATION); }
+static unsigned hash_w(const wchar_t *s) { unsigned h = 5381; for (; s && *s; s++) h = h * 33 + (unsigned)(*s | 0x20); return h; }
+static COLORREF palette_col(unsigned h) {
+    static const COLORREF P[] = { RGB(0,120,215), RGB(16,137,62), RGB(218,59,1), RGB(142,100,216), RGB(0,153,188), RGB(194,57,179), RGB(209,52,56), RGB(255,140,0), RGB(0,178,148), RGB(104,118,138), RGB(116,77,169), RGB(231,72,86) };
+    return P[h % (sizeof P / sizeof P[0])];
+}
+void g_badge(HDC dc, const wchar_t *name, RECT r, COLORREF fill) {
+    const char *shape = cfg_str("icon_shape"); int w = r.right - r.left, h = r.bottom - r.top; COLORREF f = fill;
+    HBRUSH b = CreateSolidBrush(f); HPEN p = CreatePen(PS_SOLID, 1, f); HGDIOBJ ob = SelectObject(dc, b), op = SelectObject(dc, p);
+    if (!strcmp(shape, "square") || !strcmp(shape, "rect")) Rectangle(dc, r.left, r.top, r.right, r.bottom);
+    else if (!strcmp(shape, "rounded")) RoundRect(dc, r.left, r.top, r.right, r.bottom, w / 4, h / 4);
+    else Ellipse(dc, r.left, r.top, r.right, r.bottom);
+    SelectObject(dc, ob); SelectObject(dc, op); DeleteObject(b); DeleteObject(p);
+    wchar_t ch[2] = { name && name[0] ? (wchar_t)towupper_(name[0]) : L'?', 0 }; HFONT fnt = CreateFontW(-(h * 55 / 100), 0, 0, 0, 700, 0, 0, 0, 1, 0, 0, 5, 0, L"Segoe UI"); HGDIOBJ o = SelectObject(dc, fnt); int bk = SetBkMode(dc, TRANSPARENT);
+    g_text(dc, ch, r, DT_CENTER | DT_VCENTER | DT_SINGLELINE, c_luminance(f) > 150 ? RGB(20, 20, 20) : RGB(255, 255, 255)); SetBkMode(dc, bk); SelectObject(dc, o); DeleteObject(fnt);
+}
+void g_icon_name(HDC dc, HICON ic, const wchar_t *name, int x, int y, int size, int alpha_pct) {
+    if (cfg_bool("icon_letter") && icon_is_generic(ic) && name && name[0]) {
+        COLORREF f = cfg_str("icon_fill_color")[0] ? c_hex(cfg_str("icon_fill_color"), RGB(0, 120, 215)) : palette_col(hash_w(name));
+        RECT r = { x, y, x + size, y + size }; if (alpha_pct >= 100) g_badge(dc, name, r, f); else { HDC mem = CreateCompatibleDC(dc); HBITMAP bmp = CreateCompatibleBitmap(dc, size, size); HGDIOBJ old = SelectObject(mem, bmp); BitBlt(mem, 0, 0, size, size, dc, x, y, SRCCOPY);
+            RECT z = { 0, 0, size, size }; g_badge(mem, name, z, f); BLENDFUNCTION bf = { AC_SRC_OVER, 0, (BYTE)(255 * alpha_pct / 100), 0 }; AlphaBlend(dc, x, y, size, size, mem, 0, 0, size, size, bf); SelectObject(mem, old); DeleteObject(bmp); DeleteDC(mem); }
+        return;
+    }
+    g_icon_a(dc, ic, x, y, size, alpha_pct);
+}
+/* ---- "pill" UI style: every control becomes a colour-filled shape sized to its text ---- */
+COLORREF pill_color(const wchar_t *text) { return palette_col(hash_w(text) + (unsigned)cfg_int("pill_seed") * 7u); }
+RECT g_pill(HDC dc, RECT slot, const wchar_t *text, int align, int active) {
+    SIZE sz = { 0, 0 }; GetTextExtentPoint32W(dc, text, lstrlenW(text), &sz); int h = slot.bottom - slot.top; int w = sz.cx + h; if (w > slot.right - slot.left) w = slot.right - slot.left;
+    int x = align == 0 ? slot.left : (align == 2 ? slot.right - w : (slot.left + slot.right - w) / 2); RECT r = { x, slot.top, x + w, slot.bottom };
+    COLORREF f = pill_color(text); if (active) f = c_shade(f, 1.2);
+    HBRUSH b = CreateSolidBrush(f); HPEN p = CreatePen(PS_SOLID, 1, f); HGDIOBJ ob = SelectObject(dc, b), op = SelectObject(dc, p); RoundRect(dc, r.left, r.top, r.right, r.bottom, h, h); SelectObject(dc, ob); SelectObject(dc, op); DeleteObject(b); DeleteObject(p);
+    g_text(dc, text, r, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, c_luminance(f) > 150 ? RGB(20, 20, 20) : RGB(255, 255, 255)); return r;
 }

@@ -16,10 +16,11 @@ static void forward_to_running(int code, const wchar_t *text) {
 int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show) {
     (void)inst; (void)prev; (void)cmd; (void)show;
     int argc = 0; wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    const wchar_t *open_path = NULL; int restart = 0;
+    const wchar_t *open_path = NULL; int restart = 0, game = 0;
     for (int i = 1; i < argc; i++) {
         if (!wcscmp(argv[i], L"--restart")) restart = 1;
         else if (!wcscmp(argv[i], L"--open") && i + 1 < argc) open_path = argv[++i];
+        else if (!wcscmp(argv[i], L"--game")) game = 1;
     }
     if (restart) Sleep(2000);
 
@@ -40,6 +41,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show) {
     if (!bar_create()) { MessageBoxW(NULL, L"Could not create the taskbar window.", L"WinShell", MB_ICONERROR); return 1; }
     app_apply_all();
     if (open_path) app_run(L"explorer.exe", open_path, SW_SHOWNORMAL);
+    if (game || cfg_bool("game_autostart")) game_open();
 
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0) > 0) { TranslateMessage(&msg); DispatchMessageW(&msg); }

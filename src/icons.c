@@ -57,6 +57,9 @@ static HICON lnk_icon(const wchar_t *path) {
 }
 
 HICON icon_for_file(const wchar_t *path) {
+    if (!wcsncmp(path, L"winshell:", 9)) return LoadIconW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(100));
+    if (!wcsncmp(path, L"fake:", 5)) { JNode *f = fake_app(path); JNode *v = f ? json_get(f, "icon") : NULL; HICON k = NULL;
+        if (v && v->s && v->s[0]) { wchar_t w[MAX_PATH]; w_from_utf8_buf(v->s, w, MAX_PATH); k = img_to_icon(w, 48); } return k ? k : LoadIconW(NULL, IDI_APPLICATION); }
     for (int i = 0; i < g_nfiles; i++) if (!_wcsicmp(g_files[i].path, path)) return g_files[i].ic;
     HICON icon = NULL;
     if (ends_with(path, L".lnk")) icon = lnk_icon(path);

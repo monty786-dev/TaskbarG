@@ -12,7 +12,8 @@ enum { D_HEAD, D_INFO, D_BOOL, D_SLIDER, D_FSLIDER, D_CHOICE, D_COLOR, D_STR, D_
        D_ELEM, D_SYSCLR, D_PLINK };
 enum { A_OS_APPLY = 1, A_SHUFFLE_THEME, A_SHUFFLE_TILES, A_EDIT_TASKBAR, A_EDIT_START, A_RESET_LAYOUT, A_OPEN_CFG,
        A_RELOAD, A_RESTART, A_SYS_RESET, A_PANE_RESET, A_RESET_ELEMS, A_DESK_ADD, A_DESK_TILE, A_DESK_CLOCK, A_DESK_CAL, A_DESK_SYS, A_DESK_ARRANGE,
-       A_DESK_SYNC, A_DESK_CLEAR, A_GAME_OPEN, A_GAME_ADD, A_GAME_DEL = 1000 };
+       A_DESK_SYNC, A_DESK_CLEAR, A_GAME_OPEN, A_GAME_ADD, A_RANDOM_OS, A_RANDOM_ALL, A_PILL_SHUFFLE, A_BACKUP_SAVE, A_BACKUP_RESTORE, A_SKIN_SAVE, A_SKIN_DEL, A_FAKE_ADD, A_DESK_IMAGE,
+       A_GAME_DEL = 1000, A_FAKE_BASE = 2000, A_BUILTIN_BASE = 3000 };
 
 typedef struct { int type; const char *key, *label; int a, b; const char *opts; } Def;
 typedef struct { int type; char key[64]; char label[170]; char opts[900]; int a, b; int y, h; } Item;
@@ -94,6 +95,8 @@ static void build_os(void) {
 static void build_personal(void) {
     static char o[900]; o[0] = 0; int len = 0;
     for (int i = 0; i < theme_count(); i++) len += snprintf(o + len, sizeof o - (size_t)len, "%s%s", i ? "|" : "", theme_name(i));
+    { static char oo[900]; join_opts(oo, 900, "", os_theme_count(), os_theme_name, os_theme_label); add(D_HEAD, "", "Operating system look", 0, 0, NULL); add(D_CHOICE, "os_theme", "OS theme", 0, 0, oo);
+      add(D_BUTTON, "", "Apply this OS theme", A_OS_APPLY, 0, NULL); add(D_BUTTON, "", "Random OS theme", A_RANDOM_OS, 0, NULL); add(D_BUTTON, "", "Random everything: OS, colours, shapes, title bars, game mode", A_RANDOM_ALL, 0, NULL); }
     add(D_HEAD, "", "Theme", 0, 0, NULL); add(D_CHOICE, "theme", "Theme", 0, 0, o);
     add(D_COLOR, "accent", "Accent colour (empty = theme default)", 0, 0, NULL);
     add(D_HEAD, "", "Text and size", 0, 0, NULL); add(D_STR, "font", "Font name", 0, 0, NULL);
@@ -113,12 +116,12 @@ static void build_elems(int from, int to, const char *note) {
 }
 static void build_layout_editor(void) {
     add(D_INFO, "", "Drag any taskbar element with the mouse to move it; positions are kept relative to the bar so they adapt when the bar height or position changes. Turn off an element with its switch, give it your own .png / .ico / image and pick any colour.", 0, 0, NULL);
-    add(D_BUTTON, "", "Edit taskbar layout (drag elements on the bar)", A_EDIT_TASKBAR, 0, NULL);
+    add(D_BUTTON, "", "Open the layout editor window (add, delete, resize, icon, colour)", A_EDIT_TASKBAR, 0, NULL);
     build_elems(E_START, E_APPS, "Taskbar elements, including the running-app icons and titles (group). In edit mode drag to move, drag the corner square to resize, right-click for Auto position / Auto size.");
 }
 static void build_start_elems(void) {
-    add(D_BUTTON, "", "Edit Start panel layout (drag elements)", A_EDIT_START, 0, NULL);
-    build_elems(E_SM_USER, E_SM_PANE, "Start panel elements and windows: on / off, icon image, colour. In edit mode drag to move, drag the corner square to resize, right-click for Auto position / Auto size.");
+    add(D_BUTTON, "", "Open the layout editor window for the Start panel", A_EDIT_START, 0, NULL);
+    build_elems(E_SM_USER, E_SM_MODE, "Start panel elements and windows: on / off, icon image, colour. In edit mode drag to move, drag the corner square to resize, right-click for Auto position / Auto size.");
 }
 static void build_pane(void) {
     add(D_INFO, "", "Links shown in the right pane (Windows 7 / Zorin style). Use the switch to show or hide, arrows to reorder, then icon and colour.", 0, 0, NULL);
@@ -143,11 +146,15 @@ static void build_sys(void) {
 static void build_skin(void) {
     static char o[900]; join_opts(o, 900, "", skin_theme_count(), skin_theme_name, skin_theme_label);
     static const Def d1[] = { B_("skin_enabled", "Custom title bars on program windows"), B_("skin_hide_native", "Disable Wine's own title bar (the custom bar replaces it)"),
-        S_("skin_height", "Title bar height", 22, 56), K_("skin_color", "Title bar colour (empty = theme)"),
+        S_("skin_height", "Title bar height (with Wine title bar removed)", 22, 56), C_("skin_title_align", "Title text alignment", "auto|left|center|right"), C_("skin_icon_pos", "Window icon position", "auto|left|title=Next to title|off"), C_("skin_buttons_side", "Buttons side", "auto|left|right"), K_("skin_color", "Title bar colour (empty = theme)"),
         B_("skin_btn_pin", "Pin (always on top) button"), B_("skin_btn_snap", "Snap button"), B_("skin_btn_shade", "Roll-up button"),
         B_("skin_click_anim", "Click animation on buttons"), H_("Button hover colours (empty = theme)"),
         K_("skin_btn_hover.min", "Minimise hover"), K_("skin_btn_hover.max", "Maximise / restore hover"), K_("skin_btn_hover.close", "Close hover"),
-        K_("skin_btn_hover.pin", "Pin hover"), K_("skin_btn_hover.snap", "Snap hover"), K_("skin_btn_hover.shade", "Roll-up hover") };
+        K_("skin_btn_hover.pin", "Pin hover"), K_("skin_btn_hover.snap", "Snap hover"), K_("skin_btn_hover.shade", "Roll-up hover"),
+        H_("Your own button icons (png / ico)"), P_("skin_icons.min", "Minimise", "img"), P_("skin_icons.max", "Maximise", "img"), P_("skin_icons.restore", "Restore", "img"), P_("skin_icons.close", "Close", "img"), P_("skin_icons.pin", "Pin", "img"), P_("skin_icons.snap", "Snap", "img"), P_("skin_icons.shade", "Roll-up", "img"),
+        H_("Create and save a title bar theme"), T_("skin_draft.name", "Theme name"), K_("skin_draft.on", "Active bar colour"), K_("skin_draft.off", "Inactive bar colour"), K_("skin_draft.ton", "Active text colour"), K_("skin_draft.toff", "Inactive text colour"),
+        C_("skin_draft.grad", "Gradient", "no|yes"), C_("skin_draft.shape", "Corners", "square|round"), C_("skin_draft.left", "Buttons side", "right|left"), C_("skin_draft.center", "Title alignment", "left|center"),
+        X_(A_SKIN_SAVE, "Save as a new theme and use it"), X_(A_SKIN_DEL, "Delete the selected custom theme") };
     add(D_CHOICE, "skin_theme", "Title bar style", 0, 0, o); add_defs(d1, (int)(sizeof d1 / sizeof d1[0]));
 }
 static void build_tray(void) { add(D_INFO, "", "Programs shown as small launcher icons in the taskbar's tray area. Click to open, right-click to remove. You can also use 'Add to tray' in any program's menu.", 0, 0, NULL); add_list("tray_apps", "Add a program to the tray...", "exe"); }
@@ -160,9 +167,9 @@ static void build_startbtn(void) {
 static void build_desktop(void) {
     static const Def d[] = { B_("full_desktop", "Full desktop mode (WinShell draws the desktop)"), P_("wallpaper", "Wallpaper image", "img"),
         C_("wallpaper_mode", "Wallpaper mode", "fill=Fill|fit=Fit|stretch=Stretch|center=Center|tile=Tile"), K_("desktop_color", "Background colour"),
-        B_("desktop_lock", "Lock all shortcuts (no moving or resizing)"), B_("desktop_grid", "Snap to grid"), S_("grid_size", "Grid / default item size (px)", 48, 200), S_("desktop_icon_size", "Maximum icon size (px)", 24, 128), B_("desktop_labels", "Show names under icons"),
+        B_("desktop_lock", "Lock all shortcuts (no moving or resizing)"), B_("desktop_grid", "Snap to grid"), S_("grid_size", "Grid / default item size (px)", 48, 200), S_("desktop_icon_size", "Maximum icon size (px)", 24, 128), B_("desktop_labels", "Show names under icons"), S_("widget_alpha", "Widget / tile visibility % (0 = invisible)", 0, 100),
         H_("Shortcuts sync"), B_("sync_desktop_to_start", "Wine / desktop shortcuts automatically appear in the Start app list and tiles"), B_("sync_start_to_desktop", "Start apps and tiles automatically appear on the desktop"),
-        X_(A_DESK_SYNC, "Sync now"), H_("Add to the desktop"), X_(A_DESK_ADD, "Add a shortcut..."), X_(A_DESK_TILE, "Add an app tile..."), X_(A_DESK_CLOCK, "Add clock widget"), X_(A_DESK_CAL, "Add calendar widget"), X_(A_DESK_SYS, "Add system widget"),
+        X_(A_DESK_SYNC, "Sync now"), H_("Add to the desktop"), X_(A_DESK_ADD, "Add a shortcut..."), X_(A_DESK_TILE, "Add an app tile..."), X_(A_DESK_CLOCK, "Add clock widget"), X_(A_DESK_CAL, "Add calendar widget"), X_(A_DESK_SYS, "Add system widget"), X_(A_DESK_IMAGE, "Add an image tile..."),
         X_(A_DESK_ARRANGE, "Auto-arrange items"), X_(A_DESK_CLEAR, "Remove all desktop items") };
     add(D_INFO, "", "Right-click the desktop for the same options. Drag items to move them, drag the corner square to resize, right-click an item to lock it or change its size and icon.", 0, 0, NULL); add_defs(d, (int)(sizeof d / sizeof d[0]));
 }
@@ -176,6 +183,20 @@ static void build_game(void) {
         snprintf(k, 64, "games.%d.icon", i); add(D_FILE, k, "Icon / cover image", 0, 0, "img"); snprintf(k, 64, "games.%d.bg", i); add(D_FILE, k, "Background image", 0, 0, "img");
         snprintf(k, 64, "games.%d.desc", i); add(D_STR, k, "Description", 0, 0, NULL); snprintf(k, 64, "games.%d.color", i); add(D_COLOR, k, "Tile colour (when no image)", 0, 0, NULL);
         snprintf(k, 64, "games.%d.args", i); add(D_STR, k, "Start arguments", 0, 0, NULL); add(D_BUTTON, "", "Remove this game", A_GAME_DEL + i, 0, NULL); }
+}
+static const char *BUILTIN_APPS[] = { "winshell:settings", "winshell:game", "winshell:desktop", "winshell:layout" };
+static void build_fake(void) {
+    add(D_INFO, "", "Fake apps are icon-only launchers: pick an image, give it a name, and optionally a program or action it opens. WinShell's own Settings, Game mode, desktop switch and layout editor are available as apps too. Add any of them to the Start list, tiles, taskbar, desktop or tray.", 0, 0, NULL);
+    add(D_BUTTON, "", "Add a fake app from an image...", A_FAKE_ADD, 0, NULL);
+    JNode *a = cfg_node("fake_apps"); int i = 0;
+    for (JNode *c = a ? a->child : NULL; c; c = c->next, i++) { char k[64]; JNode *nm = json_get(c, "name"); add(D_HEAD, "", nm && nm->s ? nm->s : "App", 0, 0, NULL);
+        snprintf(k, 64, "fake_apps.%d.name", i); add(D_STR, k, "Name", 0, 0, NULL); snprintf(k, 64, "fake_apps.%d.icon", i); add(D_FILE, k, "Icon image", 0, 0, "img");
+        snprintf(k, 64, "fake_apps.%d.target", i); add(D_STR, k, "Opens (program path or winshell:settings / winshell:game / winshell:desktop)", 0, 0, NULL);
+        add(D_BUTTON, "", "Add to Start list and tiles", A_FAKE_BASE + i * 10, 0, NULL); add(D_BUTTON, "", "Add to taskbar", A_FAKE_BASE + i * 10 + 1, 0, NULL); add(D_BUTTON, "", "Add to desktop", A_FAKE_BASE + i * 10 + 2, 0, NULL);
+        add(D_BUTTON, "", "Add to tray", A_FAKE_BASE + i * 10 + 3, 0, NULL); add(D_BUTTON, "", "Remove this fake app", A_FAKE_BASE + i * 10 + 4, 0, NULL); }
+    add(D_HEAD, "", "Built-in WinShell apps", 0, 0, NULL);
+    for (int b = 0; b < 4; b++) { wchar_t w[MAX_PATH], nm[128]; w_from_utf8_buf(BUILTIN_APPS[b], w, MAX_PATH); display_name(w, nm, 128); char *n8 = utf8_from_w(nm); add(D_INFO, "", n8, 0, 0, NULL); free(n8);
+        add(D_BUTTON, "", "Add to Start list and tiles", A_BUILTIN_BASE + b * 10, 0, NULL); add(D_BUTTON, "", "Add to taskbar", A_BUILTIN_BASE + b * 10 + 1, 0, NULL); add(D_BUTTON, "", "Add to desktop", A_BUILTIN_BASE + b * 10 + 2, 0, NULL); add(D_BUTTON, "", "Add to tray", A_BUILTIN_BASE + b * 10 + 3, 0, NULL); }
 }
 static void build_pinned(void) { add_list("pinned", "Add a program to the taskbar...", "exe"); }
 static void build_pins(void) { add_list("start_pins", "Pin a program to Start...", "exe"); add_list("start_apps", "Add a program to the app list...", "exe"); }
@@ -194,7 +215,8 @@ static const Def D_GLASS[] = { B_("glass", "Glass effect (translucent bars and m
   B_("round_corners", "Rounded corners"), S_("corner_radius", "Corner roundness (px)", 0, 30) };
 static const Def D_ALPHA[] = { I_("Fade icons and text. 100 = fully visible."), H_("Taskbar"), S_("bar_icon_alpha", "Icons visibility %", 10, 100), S_("bar_text_alpha", "Text visibility %", 10, 100),
   H_("Start panel"), S_("start_icon_alpha", "Icons visibility %", 10, 100), S_("start_text_alpha", "Text visibility %", 10, 100) };
-static const Def D_SHAPES[] = { C_("icon_shape", "Icon shape (taskbar, Start)", "none|circle|square|rect|rounded"), B_("icon_border", "Border around the icon shape"),
+static const Def D_SHAPES[] = { C_("icon_shape", "Icon shape (taskbar, Start, desktop)", "none|circle|square|rect|rounded"), K_("icon_fill_color", "Shape fill colour (empty = none / automatic)"),
+  B_("icon_letter", "Apps without an icon show their first letter on a colour-filled shape"), H_("Pill style"), B_("ui_pills", "Buttons, switches and labels become colour-filled shapes sized to their text"), X_(A_PILL_SHUFFLE, "Random colour shuffle"), B_("icon_border", "Border around the icon shape"),
   S_("icon_border_width", "Border width (px)", 1, 6), K_("icon_border_color", "Border colour (empty = accent)") };
 static const Def D_TASKBAR[] = {
   C_("position", "Position", "bottom=Bottom|top=Top|left=Left (vertical)|right=Right (vertical)"), C_("alignment", "Alignment", "left=Start / left|center=Centre|right=End / right"),
@@ -219,7 +241,8 @@ static const Def D_START[] = {
   C_("start_size", "Panel size (5 levels + full screen)", "tiny=Level 1 (tiny)|small=Level 2 (small)|normal=Level 3 (normal)|large=Level 4 (large)|huge=Level 5 (huge)|full=Full screen"),
   B_("start_rounded", "Rounded corners"), C_("start_rail_pos", "Power / settings column position", "left|right|top|bottom"),
   C_("start_tiles_side", "Pinned tiles / links side", "right|left|top=Above the app list (up / down)|bottom=Below the app list (up / down)"), S_("start_stack_split", "Up / down layout: tiles window height %", 20, 80), C_("start_pane", "Right pane shows", "tiles=Pinned tiles|links=Links (documents, pictures...)"),
-  B_("start_tiles_collapsed", "Hide the right pane"), B_("start_list_collapsed", "Collapse the app list"),
+  B_("start_tiles_collapsed", "Hide the right pane"), B_("start_autoclose", "Close the Start panel when clicking anywhere else"),
+  C_("list_view", "App list view", "list=List|list2=2 columns|grid2=Grid 2|grid3=Grid 3|grid4=Grid 4|grid5=Grid 5|tiles=Tiles (8 sizes)"), C_("pane_view", "Pinned items view", "tiles=Tiles (8 sizes)|grid2=Grid 2|grid3=Grid 3|grid4=Grid 4|grid5=Grid 5|list2=2 columns"), B_("start_list_collapsed", "Collapse the app list"),
   B_("start_programs_mode", "Programs button: group installed programs in folders"), B_("start_show_recent", "Show recently used"), B_("start_show_most_used", "Show most used"),
   K_("vbar_color", "Power column colour (empty = theme)") };
 static const Def D_SIZES[] = {
@@ -231,7 +254,8 @@ static const Def D_SIZES[] = {
 static const Def D_TILES[] = { C_("tile_color_mode", "Tile colours", "multi|accent|icon|custom"), B_("tile_shuffle", "Shuffle tiles automatically"), S_("tile_shuffle_seconds", "Shuffle every (s)", 3, 30),
   X_(A_SHUFFLE_TILES, "Random: shuffle sizes and colours of pinned tiles now") };
 static const Def D_SYSTEM[] = { B_("autostart", "Start WinShell with Windows"), T_("user_name", "User name"), P_("user_photo", "Profile picture", "img"),
-  X_(A_OPEN_CFG, "Open config.json in Notepad"), X_(A_RELOAD, "Reload settings from file"), X_(A_RESTART, "Restart WinShell") };
+  X_(A_OPEN_CFG, "Open config.json in Notepad"), H_("Backup and restore"),
+  X_(A_BACKUP_SAVE, "Back up settings, images, icons and shortcuts to a file..."), X_(A_BACKUP_RESTORE, "Restore from a backup file..."), X_(A_RELOAD, "Reload settings from file"), X_(A_RESTART, "Restart WinShell") };
 
 #define DEFS(a) a, (int)(sizeof a / sizeof a[0]), NULL
 static const Page PAGES[] = {
@@ -250,6 +274,7 @@ static const Page PAGES[] = {
   { "Taskbar", "Reveal bar exceptions", NULL, 0, build_strip_ex },
   { "Taskbar", "Taskbar apps", NULL, 0, build_pinned },
   { "Taskbar", "Tray apps", NULL, 0, build_tray },
+  { "Apps", "Fake and built-in apps", NULL, 0, build_fake },
   { "Start panel", "Start panel style", NULL, 0, build_start_theme },
   { "Start panel", "Start panel", DEFS(D_START) },
   { "Start panel", "Start panel sizes", DEFS(D_SIZES) },
@@ -265,6 +290,8 @@ static const Page PAGES[] = {
   { "System", "Startup and user", DEFS(D_SYSTEM) },
 };
 #define NPAGES ((int)(sizeof PAGES / sizeof PAGES[0]))
+
+static int seg_count(const Item *it);
 
 /* ---------------------------------------------------------------- geometry */
 static RECT RC(int l, int t, int r, int b) { RECT x = { l, t, r, b }; return x; }
@@ -313,7 +340,7 @@ static int parts_of(const Item *it, RECT *p) {
     int cy = top + (h - ch) / 2; memset(p, 0, sizeof(RECT) * 5);
     switch (it->type) {
     case D_BOOL: p[0] = RC(r - px(46), top + (h - px(22)) / 2, r, top + (h - px(22)) / 2 + px(22)); return 1;
-    case D_CHOICE: p[0] = RC(r - px(250), cy, r, cy + ch); return 1;
+    case D_CHOICE: { int sn = seg_count(it); int w = sn ? sn * px(100) : px(250); if (w > px(520)) w = px(520); p[0] = RC(r - w, cy, r, cy + ch); return 1; }
     case D_STR: p[0] = RC(r - px(300), cy, r, cy + ch); return 1;
     case D_COLOR: case D_SYSCLR: p[1] = RC(r - px(28), cy, r, cy + ch); p[0] = RC(p[1].left - px(8) - px(150), cy, p[1].left - px(8), cy + ch); return 2;
     case D_FILE: p[1] = RC(r - px(28), cy, r, cy + ch); p[0] = RC(p[1].left - px(8) - px(230), cy, p[1].left - px(8), cy + ch); return 2;
@@ -351,6 +378,11 @@ static void opt_label(const char *opts, const char *value, wchar_t *out, int n) 
     w_from_utf8_buf(value, out, n);
 }
 
+static int seg_count(const Item *it) {
+    int n = 0, maxl = 0; char v[100]; wchar_t l[100];
+    for (; opt_count(it->opts, n, v, 100, l, 100); n++) { int len = (int)wcslen(l); if (len > maxl) maxl = len; }
+    return (n >= 2 && n <= 5 && maxl <= 14) ? n : 0;
+}
 static int choose(const Item *it, RECT anchor, char *out, int on) {
     static wchar_t labs[100][100]; static int ids[100], fl[100]; static const wchar_t *lp[100]; char v[100]; int n = 0;
     const char *cur = get_str(it->key);
@@ -391,6 +423,7 @@ static Pal pal(void) {
 }
 
 static void draw_switch(HDC dc, RECT r, int on, int hot, const Pal *p) {
+    if (cfg_bool("ui_pills")) { g_pill(dc, r, on ? L"ON" : L"OFF", 2, on); return; }
     int h = r.bottom - r.top, w = r.right - r.left;
     HBRUSH b = CreateSolidBrush(on ? p->accent : p->bg); HPEN pen = CreatePen(PS_SOLID, 2, on ? p->accent : (hot ? p->text : p->dim));
     HGDIOBJ ob = SelectObject(dc, b), op = SelectObject(dc, pen);
@@ -400,6 +433,7 @@ static void draw_switch(HDC dc, RECT r, int on, int hot, const Pal *p) {
     Ellipse(dc, x, r.top + px(4), x + d, r.top + px(4) + d); SelectObject(dc, ob); SelectObject(dc, op); DeleteObject(k); (void)w;
 }
 static void draw_box(HDC dc, RECT r, const Pal *p, int hot, const wchar_t *text, int chevron) {
+    if (cfg_bool("ui_pills")) { g_pill(dc, r, text[0] ? text : L"-", 2, hot); return; }
     g_fill(dc, r, hot ? p->ctl_hot : p->ctl); g_frame(dc, r, hot ? p->accent : p->border, 1);
     RECT t = RC(r.left + px(10), r.top, r.right - (chevron ? px(26) : px(8)), r.bottom);
     g_text(dc, text, t, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, p->text);
@@ -413,14 +447,23 @@ static void draw_swatch(HDC dc, RECT r, COLORREF c, int has, const Pal *p, int h
     g_text(dc, t, RC(s.right + px(8), r.top, r.right - px(4), r.bottom), DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX, has ? p->text : p->dim);
 }
 static void draw_button(HDC dc, RECT r, const wchar_t *text, const Pal *p, int hot, int accent) {
+    if (cfg_bool("ui_pills")) { g_pill(dc, r, text, 0, hot || accent); return; }
     g_fill(dc, r, accent ? (hot ? c_shade(p->accent, 1.12) : p->accent) : (hot ? p->ctl_hot : p->ctl)); g_frame(dc, r, hot ? p->accent : p->border, 1);
     g_text(dc, text, RC(r.left + px(10), r.top, r.right - px(10), r.bottom), DT_VCENTER | DT_CENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, accent ? RGB(255, 255, 255) : p->text);
+}
+
+static void draw_seg(HDC dc, const Item *it, RECT r, const Pal *p, int sn) {
+    const char *cur = get_str(it->key); int w = r.right - r.left; char v[100]; wchar_t l[100];
+    for (int k = 0; k < sn; k++) { if (!opt_count(it->opts, k, v, 100, l, 100)) break; RECT s = { r.left + w * k / sn, r.top, r.left + w * (k + 1) / sn, r.bottom }; int on = !strcmp(v, cur);
+        if (cfg_bool("ui_pills")) { InflateRect(&s, -2, 0); g_pill(dc, s, l, 1, on); continue; }
+        g_fill(dc, s, on ? p->accent : p->ctl); g_frame(dc, s, on ? p->accent : p->border, 1);
+        g_text(dc, l, s, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, on ? RGB(255, 255, 255) : p->text); }
 }
 
 static void draw_item(HDC dc, int idx, const Pal *p, int L, int Rr) {
     Item *it = &g_items[idx]; RECT pr[5]; int np = parts_of(it, pr); int top = content_top() + it->y - g_scroll;
     wchar_t lab[200], tmp[260]; w_from_utf8_buf(it->label, lab, 200);
-    RECT lr = RC(L, top, Rr - px(160), top + it->h); int hov = g_hover == idx;
+    RECT lr = RC(L, top, (np > 0 && (it->type == D_BOOL || it->type == D_CHOICE || it->type == D_COLOR || it->type == D_SYSCLR || it->type == D_STR || it->type == D_FILE)) ? pr[0].left - px(12) : Rr - px(160), top + it->h); int hov = g_hover == idx;
     #define HOT(n) (hov && g_hover_part == (n))
     switch (it->type) {
     case D_HEAD: { HGDIOBJ o = SelectObject(dc, g_font_big); g_text(dc, lab, RC(L, top + px(14), Rr, top + it->h), DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX, p->accent); SelectObject(dc, o); break; }
@@ -435,8 +478,8 @@ static void draw_item(HDC dc, int idx, const Pal *p, int L, int Rr) {
         int kx = t.left + (int)((t.right - t.left) * f); g_fill(dc, RC(t.left, cy - 2, kx, cy + 2), p->accent);
         HBRUSH b = CreateSolidBrush(hov || g_drag == idx ? c_shade(p->accent, 1.15) : p->accent); HGDIOBJ ob = SelectObject(dc, b), op = SelectObject(dc, GetStockObject(NULL_PEN));
         Ellipse(dc, kx - px(8), cy - px(8), kx + px(8), cy + px(8)); SelectObject(dc, ob); SelectObject(dc, op); DeleteObject(b); break; }
-    case D_CHOICE: g_text(dc, lab, lr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, p->text);
-        opt_label(it->opts, get_str(it->key), tmp, 260); draw_box(dc, pr[0], p, HOT(0), tmp, 1); break;
+    case D_CHOICE: { g_text(dc, lab, lr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, p->text); int sn = seg_count(it);
+        if (sn) draw_seg(dc, it, pr[0], p, sn); else { opt_label(it->opts, get_str(it->key), tmp, 260); draw_box(dc, pr[0], p, HOT(0), tmp, 1); } break; }
     case D_COLOR: case D_SYSCLR: {
         COLORREF c; int has;
         if (it->type == D_SYSCLR) { c = sys_slot_color(it->a); has = 1; } else { const char *h = get_str(it->key); has = h[0] != 0; c = c_hex(h, 0); }
@@ -479,7 +522,8 @@ static void draw_nav(HDC dc, const Pal *p, int H) {
         RECT r = RC(px(8), y, nav_w() - px(8), y + px(36)); w_from_utf8_buf(PAGES[i].name, w, 100);
         if (i == g_page) { g_alpha(dc, r, p->accent, 70); g_fill(dc, RC(r.left, r.top + px(8), r.left + px(3), r.bottom - px(8)), p->accent); }
         else if (i == g_nav_hover) g_alpha(dc, r, p->text, 22);
-        g_text(dc, w, RC(r.left + px(16), r.top, r.right - px(6), r.bottom), DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, p->text);
+        if (cfg_bool("ui_pills")) g_pill(dc, RC(r.left + px(12), r.top + px(4), r.right - px(8), r.bottom - px(4)), w, 0, i == g_page);
+        else g_text(dc, w, RC(r.left + px(16), r.top, r.right - px(6), r.bottom), DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, p->text);
         y += px(38);
     }
     SelectClipRgn(dc, NULL); DeleteObject(rgn);
@@ -569,13 +613,35 @@ static JNode *pane_node(const char *id) {
     JNode *n = json_get(o, id); if (!n) n = json_put(o, id, json_new(J_OBJ)); return n;
 }
 
+static void add_path_to(const char *u, int kind) {
+    wchar_t w[MAX_PATH]; w_from_utf8_buf(u, w, MAX_PATH); JNode *a;
+    if (kind == 0) { a = cfg_node("start_apps"); if (a && !cfg_list_has("start_apps", u)) json_push(a, json_str(u)); a = cfg_node("start_pins"); if (a && !cfg_list_has("start_pins", u)) json_push(a, json_str(u)); }
+    else if (kind == 1) bar_pin(w); else if (kind == 2) desktop_add_shortcut(w, "shortcut"); else if (kind == 3) tray_add_app(w);
+    changed();
+}
+static void skin_save_draft(void) {
+    const char *nm = get_str("skin_draft.name"); JNode *d = cfg_node("skin_draft"), *c = cfg_node("skin_custom_themes"); if (!nm[0] || !d || !c) return;
+    JNode *o = json_new(J_OBJ); static const char *keys[] = { "on", "off", "ton", "toff", "grad", "shape", "left", "center" };
+    for (int i = 0; i < 8; i++) { JNode *v = json_get(d, keys[i]); json_put(o, keys[i], json_str(v && v->s ? v->s : "")); }
+    json_put(c, nm, o); cfg_set_str("skin_theme", nm);
+}
 static void do_action(int a) {
     switch (a) {
     case A_OS_APPLY: os_theme_apply(cfg_str("os_theme")); changed(); break;
     case A_SHUFFLE_THEME: shuffle_theme(); changed(); break;
     case A_SHUFFLE_TILES: shuffle_tiles(); changed(); break;
-    case A_EDIT_TASKBAR: g_edit_layout = g_edit_layout == 1 ? 0 : 1; bar_invalidate(); break;
-    case A_EDIT_START: g_edit_layout = g_edit_layout == 2 ? 0 : 2; if (g_edit_layout == 2 && !g_start_visible) start_toggle(); break;
+    case A_EDIT_TASKBAR: editor_open(0); break;
+    case A_EDIT_START: editor_open(1); break;
+    case A_DESK_IMAGE: { char b[320]; if (pick_file("img", b, 320)) { wchar_t w[MAX_PATH]; w_from_utf8_buf(b, w, MAX_PATH); desktop_add_image(w, NULL); changed(); } break; }
+    case A_RANDOM_OS: srand(GetTickCount()); os_theme_apply(os_theme_name(rand() % os_theme_count())); changed(); break;
+    case A_RANDOM_ALL: shuffle_os(1); changed(); break;
+    case A_PILL_SHUFFLE: srand(GetTickCount()); cfg_set_int("pill_seed", 1 + rand() % 9999); cfg_set_bool("ui_pills", 1); changed(); break;
+    case A_BACKUP_SAVE: app_backup_save(g_hwnd); break;
+    case A_BACKUP_RESTORE: app_backup_restore(g_hwnd); break;
+    case A_SKIN_SAVE: skin_save_draft(); changed(); break;
+    case A_SKIN_DEL: { JNode *c = cfg_node("skin_custom_themes"); if (c) json_remove(c, cfg_str("skin_theme")); cfg_set_str("skin_theme", "windows10"); changed(); break; }
+    case A_FAKE_ADD: { char b[320]; JNode *fa = cfg_node("fake_apps"); if (fa && fa->t == J_ARR && pick_file("img", b, 320)) { JNode *o = json_new(J_OBJ); char id[32]; snprintf(id, 32, "f%lu", (unsigned long)GetTickCount()); const char *bn = strrchr(b, '\\'); char nm[120]; lstrcpynA(nm, bn ? bn + 1 : b, 120); char *dot = strrchr(nm, '.'); if (dot) *dot = 0;
+            json_put(o, "id", json_str(id)); json_put(o, "name", json_str(nm)); json_put(o, "icon", json_str(b)); json_put(o, "target", json_str("")); json_put(o, "color", json_str("")); json_push(fa, o); changed(); } break; }
     case A_RESET_ELEMS: el_auto_all(); changed(); break;
     case A_DESK_ADD: case A_DESK_TILE: { char b[320]; if (pick_file("exe", b, 320)) { wchar_t w[MAX_PATH]; w_from_utf8_buf(b, w, MAX_PATH); desktop_add_shortcut(w, a == A_DESK_ADD ? "shortcut" : "tile"); changed(); } break; }
     case A_DESK_CLOCK: desktop_add_widget("clock"); changed(); break; case A_DESK_CAL: desktop_add_widget("calendar"); changed(); break; case A_DESK_SYS: desktop_add_widget("system"); changed(); break;
@@ -583,7 +649,11 @@ static void do_action(int a) {
     case A_GAME_OPEN: game_open(); break;
     case A_GAME_ADD: { char b[320]; JNode *g = cfg_node("games"); if (g && g->t == J_ARR && pick_file("exe", b, 320)) { JNode *o = json_new(J_OBJ); wchar_t w[MAX_PATH], nm[128]; w_from_utf8_buf(b, w, MAX_PATH); display_name(w, nm, 128); char *nu = utf8_from_w(nm);
             json_put(o, "name", json_str(nu)); free(nu); json_put(o, "path", json_str(b)); json_put(o, "icon", json_str("")); json_put(o, "bg", json_str("")); json_put(o, "desc", json_str("")); json_put(o, "color", json_str("")); json_put(o, "args", json_str("")); json_push(g, o); changed(); } break; }
-    default: if (a >= A_GAME_DEL) { array_remove("games", a - A_GAME_DEL); changed(); } break;
+    default:
+        if (a >= A_BUILTIN_BASE) { int b = (a - A_BUILTIN_BASE) / 10, kind = (a - A_BUILTIN_BASE) % 10; if (b < 4) add_path_to(BUILTIN_APPS[b], kind); }
+        else if (a >= A_FAKE_BASE) { int i = (a - A_FAKE_BASE) / 10, kind = (a - A_FAKE_BASE) % 10; JNode *fa = cfg_node("fake_apps"), *f = fa ? fa->child : NULL; for (int k = 0; f && k < i; k++) f = f->next;
+            if (f) { JNode *id = json_get(f, "id"); if (kind == 4) { array_remove("fake_apps", i); changed(); } else if (id && id->s) { char p[80]; snprintf(p, 80, "fake:%s", id->s); add_path_to(p, kind); } } }
+        else if (a >= A_GAME_DEL) { array_remove("games", a - A_GAME_DEL); changed(); } break;
     case A_OPEN_CFG: notepad_config(); break;
     case A_RELOAD: app_reload(); settings_refresh(); break;
     case A_RESTART: app_restart(); break;
@@ -619,7 +689,9 @@ static void activate(int idx, int part, int x, int right) {
     switch (it->type) {
     case D_BOOL: cfg_set_bool(it->key, !cfg_bool(it->key)); changed(); break;
     case D_SLIDER: case D_FSLIDER: g_drag = idx; SetCapture(g_hwnd); slider_set(idx, x); InvalidateRect(g_hwnd, NULL, FALSE); break;
-    case D_CHOICE: { RECT pr[5]; parts_of(it, pr); if (choose(it, pr[0], buf, 320)) { set_str(it->key, buf); changed(); } break; }
+    case D_CHOICE: { RECT pr[5]; parts_of(it, pr); int sn = seg_count(it);
+        if (sn) { int k = (x - pr[0].left) * sn / (pr[0].right - pr[0].left); if (k < 0) k = 0; if (k >= sn) k = sn - 1; char v[100]; wchar_t l[100]; if (opt_count(it->opts, k, v, 100, l, 100)) { set_str(it->key, v); changed(); } break; }
+        if (choose(it, pr[0], buf, 320)) { set_str(it->key, buf); changed(); } break; }
     case D_COLOR: if (part == 1 || right) { set_str(it->key, ""); changed(); }
         else { const char *h = get_str(it->key); c = h[0] ? c_hex(h, 0) : app_accent(); if (pick_color(c, &c)) { char hx[8]; to_hex(c, hx); set_str(it->key, hx); changed(); } } break;
     case D_SYSCLR: if (part == 1 || right) { sys_slot_set(it->a, ""); changed(); }

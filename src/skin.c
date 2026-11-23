@@ -33,16 +33,27 @@ static const SkinTh TH[] = {
  {"light","Light",0,0,0,0,{240,240,240},{250,250,250},{20,20,20},{120,120,120}},
 };
 #define NTH ((int)(sizeof TH / sizeof TH[0]))
-int skin_theme_count(void) { return NTH; }
-const char *skin_theme_name(int i) { return TH[i].name; }
-const char *skin_theme_label(int i) { return TH[i].label; }
-static const SkinTh *cur_theme(void) { const char *n = cfg_str("skin_theme"); for (int i = 0; i < NTH; i++) if (!strcmp(TH[i].name, n)) return &TH[i]; return &TH[0]; }
+static JNode *customs(void) { JNode *o = cfg_node("skin_custom_themes"); return o && o->t == J_OBJ ? o : NULL; }
+int skin_theme_count(void) { JNode *c = customs(); return NTH + (c ? json_count(c) : 0); }
+const char *skin_theme_name(int i) { if (i < NTH) return TH[i].name; JNode *c = customs(); i -= NTH; for (JNode *k = c ? c->child : NULL; k; k = k->next, i--) if (i == 0 && k->key) return k->key; return "dark"; }
+const char *skin_theme_label(int i) { return i < NTH ? TH[i].label : skin_theme_name(i); }
+static const char *jstr(JNode *o, const char *k) { JNode *v = o ? json_get(o, k) : NULL; return v && v->t == J_STR && v->s ? v->s : ""; }
+static int jbool(JNode *o, const char *k) { JNode *v = o ? json_get(o, k) : NULL; return v && ((v->t == J_BOOL && v->b) || (v->t == J_STR && v->s && (!strcmp(v->s, "yes") || !strcmp(v->s, "round") || !strcmp(v->s, "left")))); }
+static void hex3(const char *h, COLORREF def, int *o) { COLORREF c = c_hex(h, def); o[0] = GetRValue(c); o[1] = GetGValue(c); o[2] = GetBValue(c); }
+static SkinTh g_ct;
+static const SkinTh *cur_theme(void) {
+    const char *n = cfg_str("skin_theme"); JNode *c = customs(), *o = c ? json_get(c, n) : NULL;
+    if (o) { memset(&g_ct, 0, sizeof g_ct); g_ct.name = n; g_ct.label = n; g_ct.left = jbool(o, "left"); g_ct.shape = jbool(o, "shape"); g_ct.center = jbool(o, "center"); g_ct.grad = jbool(o, "grad");
+        hex3(jstr(o, "on"), RGB(0, 120, 215), g_ct.on); hex3(jstr(o, "off"), RGB(235, 235, 235), g_ct.off); hex3(jstr(o, "ton"), RGB(255, 255, 255), g_ct.ton); hex3(jstr(o, "toff"), RGB(110, 110, 110), g_ct.toff); return &g_ct; }
+    for (int i = 0; i < NTH; i++) if (!strcmp(TH[i].name, n)) return &TH[i]; return &TH[0];
+}
 
 typedef struct {
     HWND target, ov; DWORD orig_style; int style_changed; int hover, down; DWORD click_t; int click_btn;
+    HICON ic; wchar_t exe[MAX_PATH]; DWORD ic_t;
     RECT last; wchar_t title[128]; int active, was_zoomed, shaded, drag; POINT drag_start; RECT drag_rect; RECT saved; int snap;
 } Skin;
-static Skin g_sk[MAX_SK]; static int g_nsk; static int g_tick; static HANDLE g_hook1, g_hook2; static int g_inited;
+static Skin g_sk[MAX_SK]; static int g_nsk; static int g_tick, g_settle; static HANDLE g_hook1, g_hook2; static int g_inited;
 
 static int hide_native(void) { return cfg_bool("skin_hide_native"); }
 static int cap_h_custom(void) { return px(cfg_int("skin_height")); }
@@ -136,13 +147,15 @@ static void remove_skin(int i) {
 }
 
 /* ---------------------------------------------------------------- buttons */
+static int side_left(const SkinTh *t) { const char *v = cfg_str("skin_buttons_side"); if (!strcmp(v, "left")) return 1; if (!strcmp(v, "right")) return 0; return t->left; }
+static int circles(const SkinTh *t) { return t->left && strcmp(cfg_str("skin_buttons_side"), "right") != 0; }
 static int buttons(Skin *s, int *ids, RECT *rects, int W, int H) {
-    const SkinTh *t = cur_theme(); int n = 0, bw = (int)(H * 1.45); if (t->left) bw = H;
-    int list[6], k = 0; (void)s;
-    if (t->left) { list[k++] = B_CLOSE; list[k++] = B_MIN; list[k++] = B_MAX; }
+    const SkinTh *t = cur_theme(); int n = 0, sl = side_left(t), circ = circles(t), bw = circ ? H : (int)(H * 1.45), list[6], k = 0; (void)s;
+    if (sl) { list[k++] = B_CLOSE; list[k++] = B_MIN; list[k++] = B_MAX; if (cfg_bool("skin_btn_pin")) list[k++] = B_PIN; if (cfg_bool("skin_btn_snap")) list[k++] = B_SNAP; if (cfg_bool("skin_btn_shade")) list[k++] = B_SHADE; }
     else { if (cfg_bool("skin_btn_shade")) list[k++] = B_SHADE; if (cfg_bool("skin_btn_snap")) list[k++] = B_SNAP; if (cfg_bool("skin_btn_pin")) list[k++] = B_PIN; list[k++] = B_MIN; list[k++] = B_MAX; list[k++] = B_CLOSE; }
-    for (int i = 0; i < k; i++) { ids[n] = list[i];
-        if (t->left) rects[n] = (RECT){ px(8) + i * (H * 7 / 10 + px(4)), (H - H * 6 / 10) / 2, px(8) + i * (H * 7 / 10 + px(4)) + H * 6 / 10, (H - H * 6 / 10) / 2 + H * 6 / 10 };
+    for (int i = 0; i < k; i++) { ids[n] = list[i]; int d = H * 6 / 10;
+        if (circ) rects[n] = (RECT){ px(8) + i * (H * 7 / 10 + px(4)), (H - d) / 2, px(8) + i * (H * 7 / 10 + px(4)) + d, (H - d) / 2 + d };
+        else if (sl) rects[n] = (RECT){ i * bw, 0, (i + 1) * bw, H };
         else rects[n] = (RECT){ W - (k - i) * bw, 0, W - (k - i - 1) * bw, H };
         n++; }
     return n;
@@ -156,32 +169,42 @@ static COLORREF btn_hover_color(int b, COLORREF cap) {
 }
 static COLORREF trafficlight(int b) { return b == B_CLOSE ? RGB(255, 95, 86) : (b == B_MIN ? RGB(255, 189, 46) : RGB(39, 201, 63)); }
 
+static const char *custom_icon(int b, int zoomed) {
+    JNode *o = cfg_node("skin_icons"); static const char *k[] = { "min", "max", "close", "pin", "snap", "shade" }; const char *key = (b == B_MAX && zoomed) ? "restore" : k[b];
+    JNode *v = o ? json_get(o, key) : NULL; return v && v->t == J_STR && v->s ? v->s : "";
+}
 static void paint(Skin *s, HDC dc, int W, int H) {
     const SkinTh *t = cur_theme(); int act = s->active; COLORREF cap = act ? C3(t->on) : C3(t->off), txt = act ? C3(t->ton) : C3(t->toff);
-    if (cfg_str("skin_color")[0] && cfg_bool("skin_enabled") && strcmp(cfg_str("skin_color_mode"), "theme") != 0) { cap = c_hex(cfg_str("skin_color"), cap); txt = c_luminance(cap) < 140 ? RGB(255, 255, 255) : RGB(0, 0, 0); }
-    else if (cfg_str("skin_color")[0]) { cap = c_hex(cfg_str("skin_color"), cap); txt = c_luminance(cap) < 140 ? RGB(255, 255, 255) : RGB(0, 0, 0); }
+    if (cfg_str("skin_color")[0]) { cap = c_hex(cfg_str("skin_color"), cap); txt = c_luminance(cap) < 140 ? RGB(255, 255, 255) : RGB(0, 0, 0); }
     RECT all = { 0, 0, W, H }; if (t->grad) g_vgrad(dc, all, c_shade(cap, 1.18), c_shade(cap, 0.82), 1); else g_fill(dc, all, cap);
     g_fill(dc, (RECT){ 0, H - 1, W, H }, c_mix(cap, c_luminance(cap) < 140 ? RGB(255, 255, 255) : RGB(0, 0, 0), 0.22));
     SetBkMode(dc, TRANSPARENT); HGDIOBJ of = SelectObject(dc, g_font);
-    int ids[6]; RECT br[6]; int nb = buttons(s, ids, br, W, H); int tl = px(8), tr = W - px(8);
-    if (t->left) { tl = br[nb - 1].right + px(10); tr = W - px(10); } else { tr = br[0].left - px(6); }
-    HICON ic = icon_for_window(s->target, L""); int isz = H * 5 / 9; if (isz > px(20)) isz = px(20);
-    if (!t->left && !t->center && ic) { DrawIconEx(dc, px(8), (H - isz) / 2, ic, isz, isz, 0, NULL, DI_NORMAL); tl = px(8) + isz + px(8); }
-    g_text(dc, s->title, (RECT){ tl, 0, tr, H }, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX | (t->center ? DT_CENTER : 0), txt);
+    int ids[6]; RECT br[6]; int nb = buttons(s, ids, br, W, H), lo = px(8), ro = W - px(8);
+    for (int i = 0; i < nb; i++) { if (br[i].right < W / 2) { if (br[i].right + px(6) > lo) lo = br[i].right + px(6); } else if (br[i].left - px(6) < ro) ro = br[i].left - px(6); }
+    const char *ta = cfg_str("skin_title_align"), *ip = cfg_str("skin_icon_pos");
+    int center = !strcmp(ta, "center") || (!strcmp(ta, "auto") && t->center), right = !strcmp(ta, "right");
+    int show_icon = strcmp(ip, "off") != 0 && s->ic, icon_title = !strcmp(ip, "title") || (!strcmp(ip, "auto") && center), isz = H * 5 / 9; if (isz > px(20)) isz = px(20); if (isz < 12) isz = 12;
+    if (show_icon && !icon_title) { DrawIconEx(dc, lo, (H - isz) / 2, s->ic, isz, isz, 0, NULL, DI_NORMAL); lo += isz + px(8); }
+    SIZE sz = { 0, 0 }; GetTextExtentPoint32W(dc, s->title, lstrlenW(s->title), &sz); int extra = (show_icon && icon_title) ? isz + px(6) : 0, avail = ro - lo, tw = sz.cx; if (tw + extra > avail) tw = avail - extra; if (tw < 0) tw = 0;
+    int block = tw + extra, x0 = right ? ro - block : (center ? lo + (avail - block) / 2 : lo);
+    if (extra) { DrawIconEx(dc, x0, (H - isz) / 2, s->ic, isz, isz, 0, NULL, DI_NORMAL); x0 += extra; }
+    g_text(dc, s->title, (RECT){ x0, 0, x0 + tw + 2, H }, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX | DT_LEFT, txt);
+    int circ = circles(t);
     for (int i = 0; i < nb; i++) {
-        int b = ids[i]; RECT r = br[i]; int hot = s->hover == b, down = s->down == b;
-        if (t->left) {                                          /* traffic lights */
+        int b = ids[i]; RECT r = br[i]; int hot = s->hover == b, down = s->down == b; const char *ci = custom_icon(b, IsZoomed(s->target)); wchar_t cw[MAX_PATH]; w_from_utf8_buf(ci, cw, MAX_PATH);
+        if (circ) {
             COLORREF c = trafficlight(b); if (!act) c = RGB(190, 190, 190); if (down) c = c_shade(c, 0.75);
             HBRUSH hb = CreateSolidBrush(c); HGDIOBJ ob = SelectObject(dc, hb), op = SelectObject(dc, GetStockObject(NULL_PEN)); Ellipse(dc, r.left, r.top, r.right, r.bottom); SelectObject(dc, ob); SelectObject(dc, op); DeleteObject(hb);
-            if (hot) glyph_draw(b == B_CLOSE ? G_CLOSE : (b == B_MIN ? G_MIN : G_MAX), dc, (RECT){ r.left + 2, r.top + 2, r.right - 2, r.bottom - 2 }, RGB(60, 40, 30));
+            RECT gr = { r.left + 2, r.top + 2, r.right - 2, r.bottom - 2 }; if (ci[0] && img_draw(dc, cw, gr, 0, 0)) { } else if (hot) glyph_draw(b == B_CLOSE ? G_CLOSE : (b == B_MIN ? G_MIN : G_MAX), dc, gr, RGB(60, 40, 30));
         } else {
             COLORREF hc = btn_hover_color(b, cap), gc = txt;
             if (hot || down) { g_fill(dc, r, down ? c_shade(hc, 0.82) : hc); if (b == B_CLOSE || c_luminance(hc) < 120) gc = RGB(255, 255, 255); else gc = c_luminance(hc) > 170 ? RGB(20, 20, 20) : gc; }
             int g = b == B_MIN ? G_MIN : (b == B_MAX ? (IsZoomed(s->target) ? G_RESTORE : G_MAX) : (b == B_CLOSE ? G_CLOSE : (b == B_PIN ? G_PIN : (b == B_SNAP ? G_SNAP : G_SHADE))));
             if (b == B_PIN && (GetWindowLongPtrW(s->target, GWL_EXSTYLE) & WS_EX_TOPMOST)) gc = app_accent();
-            int sz = H * 4 / 10; glyph_draw(g, dc, (RECT){ (r.left + r.right) / 2 - sz / 2, (r.top + r.bottom) / 2 - sz / 2, (r.left + r.right) / 2 + sz / 2, (r.top + r.bottom) / 2 + sz / 2 }, gc);
+            int sz2 = H * 4 / 10; RECT gr = { (r.left + r.right) / 2 - sz2 / 2, (r.top + r.bottom) / 2 - sz2 / 2, (r.left + r.right) / 2 + sz2 / 2, (r.top + r.bottom) / 2 + sz2 / 2 };
+            if (!(ci[0] && img_draw(dc, cw, gr, gc, 0))) glyph_draw(g, dc, gr, gc);
         }
-        if (cfg_bool("skin_click_anim") && s->click_btn == b) {                 /* expanding ripple */
+        if (cfg_bool("skin_click_anim") && s->click_btn == b) {
             int age = (int)(GetTickCount() - s->click_t); if (age < 260) { int cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2, rad = (r.right - r.left) / 2 * age / 200 + 2;
                 int alpha = 120 - 120 * age / 260; RECT rr = { cx - rad, cy - rad, cx + rad, cy + rad }; if (rr.left < r.left) rr.left = r.left; if (rr.right > r.right) rr.right = r.right; if (rr.top < r.top) rr.top = r.top; if (rr.bottom > r.bottom) rr.bottom = r.bottom;
                 g_alpha(dc, rr, RGB(255, 255, 255), alpha); } else s->click_btn = B_NONE; }
@@ -259,8 +282,9 @@ static void sync_one(Skin *s) {
     sync_pos(s, 0); place_above(s);
 }
 static void CALLBACK ev_proc(HANDLE hook, DWORD ev, HWND h, LONG obj, LONG child, DWORD thr, DWORD time) {
-    (void)hook; (void)ev; (void)child; (void)thr; (void)time;
+    (void)hook; (void)child; (void)thr; (void)time;
     if (obj != OBJID_WINDOW) return;
+    if (ev == EVENT_SYSTEM_FOREGROUND) { g_settle = 8; for (int i = 0; i < g_nsk; i++) sync_one(&g_sk[i]); return; }          /* raise the active window's bar with it */
     Skin *s = find_skin(h); if (s) sync_one(s);
 }
 
@@ -268,7 +292,7 @@ void skin_tick(void) {
     if (!g_inited || !cfg_bool("skin_enabled")) return;
     g_tick++;
     if (g_tick % 6 == 0) EnumWindows(enum_cb, 0);
-    HWND fg = GetForegroundWindow();
+    HWND fg = GetForegroundWindow(); int settle = g_settle > 0; if (settle) g_settle--;
     for (int i = 0; i < g_nsk; ) {
         Skin *s = &g_sk[i];
         if (!IsWindow(s->target) || !IsWindowVisible(s->target) || IsIconic(s->target) || (!s->style_changed && (GetWindowLongPtrW(s->target, GWL_STYLE) & WS_CAPTION) != WS_CAPTION) || excluded(s->target)) {
@@ -278,9 +302,11 @@ void skin_tick(void) {
         if (!IsWindowVisible(s->ov)) ShowWindow(s->ov, SW_SHOWNA);
         int act = fg == s->target || (fg && GetAncestor(fg, GA_ROOTOWNER) == s->target);
         wchar_t tt[128]; GetWindowTextW(s->target, tt, 128);
+        if (!s->ic || GetTickCount() - s->ic_t > 3000) { if (!s->exe[0]) window_process_path(s->target, s->exe, MAX_PATH); HICON ni = icon_for_window(s->target, s->exe); if (ni != s->ic) { s->ic = ni; InvalidateRect(s->ov, NULL, FALSE); } s->ic_t = GetTickCount(); }
         if (act != s->active || wcscmp(tt, s->title) || IsZoomed(s->target) != s->was_zoomed) { s->active = act; lstrcpyW(s->title, tt); s->was_zoomed = IsZoomed(s->target); InvalidateRect(s->ov, NULL, FALSE); }
         if (hide_native()) { apply_native(s); keep_inside(s); }
         if (!s->drag) sync_one(s); else place_above(s);
+        if (settle) place_above(s);
         i++;
     }
 }

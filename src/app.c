@@ -9,8 +9,21 @@ typedef BOOL (WINAPI *ShellHook_t)(HWND);
 ULONGLONG app_config_mtime(void) { return g_mtime; }
 void app_save(void) { cfg_save(); g_mtime = cfg_mtime(); }
 
+void app_toggle_desktop(void) { cfg_set_bool("full_desktop", !cfg_bool("full_desktop")); app_save(); app_apply_all(); }
+
 void app_run(const wchar_t *target, const wchar_t *params, int show) {
     if (!target || !target[0]) return;
+    if (!wcsncmp(target, L"winshell:", 9)) {                       /* built-in "apps" */
+        const wchar_t *k = target + 9;
+        if (!wcsncmp(k, L"settings", 8)) { if (k[8] == L':') { char *u = utf8_from_w(k + 9); settings_open_page(u); free(u); } else settings_open(-1); }
+        else if (!wcscmp(k, L"game")) game_open(); else if (!wcscmp(k, L"desktop")) app_toggle_desktop(); else if (!wcscmp(k, L"layout")) editor_open(0);
+        return;
+    }
+    if (!wcsncmp(target, L"fake:", 5)) {                           /* icon-only apps: optionally forward to a real target */
+        JNode *f = fake_app(target); JNode *t = f ? json_get(f, "target") : NULL;
+        if (t && t->s && t->s[0]) { wchar_t w[MAX_PATH]; w_from_utf8_buf(t->s, w, MAX_PATH); if (wcsncmp(w, L"fake:", 5) != 0) app_run(w, params, show); }
+        return;
+    }
     wchar_t full[MAX_PATH];
     /* resolve bare names like "notepad.exe" the same way the Python app does */
     find_exe(target, full, MAX_PATH);
@@ -107,7 +120,7 @@ static void set_autostart(void) {
 
 void app_apply_all(void) {
     apply_fonts(); g_glass_clear(); img_clear();
-    bar_apply(); start_apply(); skin_apply(); reveal_apply(); desktop_apply(); game_apply(); sys_apply(); set_autostart(); settings_refresh();
+    bar_apply(); start_apply(); skin_apply(); reveal_apply(); desktop_apply(); game_apply(); sys_apply(); set_autostart(); settings_refresh(); if (editor_hwnd() && IsWindowVisible(editor_hwnd())) InvalidateRect(editor_hwnd(), NULL, FALSE);
 }
 
 void app_reload(void) {
@@ -126,7 +139,7 @@ void app_shutdown(void) {
     bar_restore_work_area();
     HWND wine = FindWindowW(L"Shell_TrayWnd", NULL);
     if (wine) ShowWindow(wine, SW_SHOW);
-    skin_shutdown(); reveal_destroy(); desktop_destroy(); game_destroy(); preview_destroy(); settings_destroy(); start_destroy(); tray_close(); g_glass_clear(); icons_close();
+    skin_shutdown(); reveal_destroy(); desktop_destroy(); game_destroy(); preview_destroy(); editor_destroy(); settings_destroy(); start_destroy(); tray_close(); g_glass_clear(); icons_close();
     if (g_font) DeleteObject(g_font);
     if (g_font_big) DeleteObject(g_font_big);
     if (g_font_small) DeleteObject(g_font_small);

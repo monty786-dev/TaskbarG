@@ -15,7 +15,7 @@
 #define MAX_EXP 64
 
 enum { LY_TILES, LY_TWOCOL, LY_GRID, LY_CLASSIC };
-enum { HK_NONE, HK_RAIL, HK_APP, HK_RUN, HK_GROUP, HK_TILE, HK_LINK, HK_USER, HK_ADD, HK_SW, HK_ALL, HK_SEARCH, HK_LISTW, HK_PANEW };
+enum { HK_NONE, HK_RAIL, HK_APP, HK_RUN, HK_GROUP, HK_TILE, HK_LINK, HK_USER, HK_ADD, HK_SW, HK_ALL, HK_SEARCH, HK_LISTW, HK_PANEW, HK_MODE };
 
 typedef struct { wchar_t name[128]; wchar_t path[MAX_PATH]; char group[96]; } App;
 typedef struct { int kind, level; wchar_t path[MAX_PATH]; wchar_t name[128]; char group[96]; } Row;   /* kind 0 head 1 app 2 run 3 group */
@@ -81,11 +81,12 @@ static int cell_h(void) { int l = cfg_int("tile_level"); if (l < 1) l = 1; if (l
 /* ---------------------------------------------------------------- geometry */
 typedef struct {
     int mode, W, H, list_top, vrail;
-    RECT rail, list, pane, user, add, search, sw, all, ri[6], title;
+    RECT rail, list, pane, user, add, search, sw, all, ri[6], title, modeb;
     int has_list, has_pane, has_search;
 } Geo;
 
 static int edit_rects(const Geo *g, int *ids, RECT *rc);
+static COLORREF tile_color(int idx, const wchar_t *path, HICON ic, const Theme *th);
 static void offs(int e, RECT *r) { *r = el_apply(e, *r); }
 static RECT region(int e, RECT r) { return el_apply(e, r); }
 
@@ -166,6 +167,7 @@ static void geometry(Geo *g) {
     if (g->has_search || g->search.right > g->search.left) offs(E_SM_SEARCH, &g->search);
     if (g->sw.right > g->sw.left) offs(E_SM_SWITCH, &g->sw);
     for (int i = 0; i < 6; i++) if (g->ri[i].right > g->ri[i].left) offs(RAIL_EL[i], &g->ri[i]);
+    if (el_show(E_SM_MODE)) { RECT b; if (g->sw.right > g->sw.left && g->has_pane) b = R(g->sw.left - px(36), g->sw.top, g->sw.left - px(4), g->sw.bottom); else if (g->mode == LY_GRID) b = R(g->all.left - px(36), g->all.top, g->all.left - px(4), g->all.bottom); else b = R(g->W - px(40), px(6), g->W - px(8), px(38)); g->modeb = el_apply(E_SM_MODE, b); }
 }
 static void position(int *x, int *y, int *W, int *H) {
     Geo g; geometry(&g); *W = g.W; *H = g.H; int sw, sh; screen_size(&sw, &sh); RECT wk = work_rect(), sb = bar_start_screen_rect(); int gp = gap();
@@ -286,7 +288,22 @@ static void build_rows(void) {
         if (ch != last) { wchar_t s[2] = { ch, 0 }; add_row(0, 0, L"", s, ""); last = ch; } add_row(1, 0, g_apps[i].path, g_apps[i].name, ""); }
 }
 static int row_h(const Row *r) { return r->kind == 0 ? px(30) : (r->kind == 3 ? px(36) : px(cfg_int("list_row_h"))); }
-static int content_h(void) { int t = 0; for (int i = 0; i < g_nrows; i++) t += row_h(&g_rows[i]); return t; }
+/* App list views: list, list2 (two columns), grid2..grid5, tiles */
+static RECT g_rr[MAX_ROWS]; static int g_rcont, g_rmode, g_rcols = 1, g_pane_style;
+static void lay_rows(int width) {
+    const char *v = cfg_str("list_view"); int cols = 1, mode = 0, gp = px(4);
+    if (!strcmp(v, "list2")) cols = 2; else if (!strncmp(v, "grid", 4)) { cols = atoi(v + 4); if (cols < 2) cols = 2; if (cols > 6) cols = 6; mode = 1; }
+    else if (!strcmp(v, "tiles")) { mode = 2; cols = width / (cell_w() + gp); if (cols < 1) cols = 1; }
+    int cw = width / cols, y = 0, col = 0, cur = 0;
+    for (int i = 0; i < g_nrows; i++) {
+        if (g_rows[i].kind == 0 || g_rows[i].kind == 3) { if (col) { y += cur; col = 0; cur = 0; } int h = row_h(&g_rows[i]); g_rr[i] = R(0, y, width, y + h); y += h; continue; }
+        int ch = mode == 0 ? px(cfg_int("list_row_h")) : (mode == 1 ? (cw * 9 / 10 > px(70) ? cw * 9 / 10 : px(70)) : cell_h());
+        g_rr[i] = R(col * cw, y, (col + 1) * cw - (mode ? gp : 0), y + ch); if (ch > cur) cur = ch; if (++col >= cols) { y += cur + (mode ? gp : 0); col = 0; cur = 0; }
+    }
+    if (col) y += cur; g_rcont = y; g_rmode = mode; g_rcols = cols;
+}
+static int content_h(void) { return g_rcont; }
+static void prep_rows(const Geo *g);
 
 /* ------------------------------------------------------------------ tiles */
 static void tile_layout(const Geo *g) {
@@ -294,7 +311,13 @@ static void tile_layout(const Geo *g) {
     int cw = cell_w(), ch = cell_h(), gp = px(4); int avail = g->pane.right - g->pane.left - px(24); int cols = (avail + gp) / (cw + gp); if (cols < 1) cols = 1; if (cols > 16) cols = 16;
     static unsigned char occ[300][16]; memset(occ, 0, sizeof occ);
     int x0 = g->pane.left + px(12), y0 = g->pane.top + px(44), maxb = y0; JNode *pins = cfg_node("start_pins"), *sizes = cfg_node("tile_sizes"); if (!pins || pins->t != J_ARR) return;
-    int flat = g->mode == LY_GRID;
+    int flat = g->mode == LY_GRID; const char *pv = cfg_str("pane_view"); g_pane_style = 0; (void)flat;
+    if (!strncmp(pv, "grid", 4) || !strcmp(pv, "list2")) {
+        int N = pv[0] == 'g' ? atoi(pv + 4) : 2; if (N < 2) N = 2; if (N > 6) N = 6; g_pane_style = pv[0] == 'g' ? 1 : 2; int cwid = (avail - gp * (N - 1)) / N, chg = g_pane_style == 1 ? cwid * 9 / 10 : px(cfg_int("list_row_h")), i = 0;
+        for (JNode *c = pins->child; c && g_ntiles < MAX_PINS; c = c->next) { if (!c->s) continue; Tile *t = &g_tiles[g_ntiles++]; w_from_utf8_buf(c->s, t->path, MAX_PATH); t->sw = t->sh = 1;
+            int x = x0 + (i % N) * (cwid + gp), y = y0 + (i / N) * (chg + gp); t->r = R(x, y, x + cwid, y + chg); if (t->r.bottom > maxb) maxb = t->r.bottom; i++; }
+        g_tile_content = maxb - y0 + px(12); return;
+    }
     for (JNode *c = pins->child; c && g_ntiles < MAX_PINS; c = c->next) {
         if (!c->s) continue; JNode *sz = json_get(sizes, c->s); const char *size = flat ? "medium" : (sz && sz->s ? sz->s : "medium"); int sw_ = 1, sh_ = 1;
         if (!strcmp(size, "wide")) sw_ = 2; else if (!strcmp(size, "large")) { sw_ = 2; sh_ = 2; } if (sw_ > cols) sw_ = cols;
@@ -316,6 +339,7 @@ static int links_shown(int *idx, int max) {
     return n;
 }
 static void clamp_scroll(const Geo *g) {
+    prep_rows(g);
     int m = content_h() - (g->list.bottom - g->list.top - g->list_top); if (m < 0) m = 0; if (g_scroll > m) g_scroll = m; if (g_scroll < 0) g_scroll = 0;
     int ph = g->pane.bottom - g->pane.top - px(44); int tc = g_tile_content; if (cfg_str("start_pane")[0] == 'l') { int ids[NLINKS]; tc = links_shown(ids, NLINKS) * link_row_h() + px(12); }
     m = tc - ph; if (m < 0) m = 0; if (g_tile_scroll > m) g_tile_scroll = m; if (g_tile_scroll < 0) g_tile_scroll = 0;
@@ -361,22 +385,26 @@ static void draw_search_box(HDC dc, const Geo *g, const Theme *th, int glass) {
     g_frame(dc, sr, g_query[0] ? th->accent : th->active, 1); el_draw(dc, E_SM_SEARCH, R(sr.left + px(8), sr.top + px(6), sr.left + px(8) + (sr.bottom - sr.top - px(12)), sr.bottom - px(6)), th->dim, G_SEARCH);
 }
 static void draw_rows(HDC dc, RECT area, const Theme *th, int glass) {
-    HRGN rgn = CreateRectRgn(area.left, area.top, area.right, area.bottom); SelectClipRgn(dc, rgn); int ry = area.top - g_scroll;
+    HRGN rgn = CreateRectRgn(area.left, area.top, area.right, area.bottom); SelectClipRgn(dc, rgn);
     for (int i = 0; i < g_nrows; i++) {
-        Row *r = &g_rows[i]; int rh = row_h(r);
-        if (ry + rh > area.top && ry < area.bottom) {
-            int ind = px(r->level * 18);
-            if (r->kind == 0) g_text(dc, r->name, R(area.left + px(16), ry, area.right, ry + rh), DT_VCENTER | DT_SINGLELINE, SA(th, th->accent));
-            else if (r->kind == 3) { RECT rr = R(area.left, ry, area.right - px(8), ry + rh); if (g_hover_kind == HK_GROUP && !_wcsicmp(g_hover_path, r->name)) hl(dc, rr, glass, th);
-                glyph_draw(is_exp(r->group) ? G_CHEVRON_D : G_CHEVRON_R, dc, R(area.left + px(8) + ind, ry, area.left + px(28) + ind, ry + rh), th->dim);
-                glyph_draw(G_FOLDER, dc, R(area.left + px(30) + ind, ry + px(8), area.left + px(50) + ind, ry + rh - px(8)), th->accent);
-                g_text(dc, r->name, R(area.left + px(58) + ind, ry, area.right - px(14), ry + rh), DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, SA(th, th->text)); }
-            else { RECT rr = R(area.left, ry, area.right - px(8), ry + rh);
-                if (g_hover_kind == (r->kind == 2 ? HK_RUN : HK_APP) && !wcscmp(g_hover_path, r->path)) hl(dc, rr, glass, th);
-                HICON ic = icon_for_file(r->kind == 2 ? L"cmd.exe" : r->path); int isz = px(24) < rh - 6 ? px(24) : rh - 6; g_icon_a(dc, ic, area.left + px(14) + ind, ry + (rh - isz) / 2, isz, cfg_int("start_icon_alpha"));
-                g_text(dc, r->name, R(area.left + px(50) + ind, ry, area.right - px(14), ry + rh), DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, SA(th, th->text)); }
+        Row *r = &g_rows[i]; RECT q = g_rr[i]; OffsetRect(&q, area.left, area.top - g_scroll); if (q.bottom < area.top || q.top > area.bottom) continue;
+        int rh = q.bottom - q.top, ind = g_rmode == 0 && g_rcols == 1 ? px(r->level * 18) : 0;
+        if (r->kind == 0) g_text(dc, r->name, R(q.left + px(16), q.top, q.right, q.bottom), DT_VCENTER | DT_SINGLELINE, SA(th, th->accent));
+        else if (r->kind == 3) { RECT rr = R(q.left, q.top, q.right - px(8), q.bottom); if (g_hover_kind == HK_GROUP && !_wcsicmp(g_hover_path, r->name)) hl(dc, rr, glass, th);
+            glyph_draw(is_exp(r->group) ? G_CHEVRON_D : G_CHEVRON_R, dc, R(q.left + px(8) + ind, q.top, q.left + px(28) + ind, q.bottom), th->dim);
+            glyph_draw(G_FOLDER, dc, R(q.left + px(30) + ind, q.top + px(8), q.left + px(50) + ind, q.bottom - px(8)), th->accent);
+            g_text(dc, r->name, R(q.left + px(58) + ind, q.top, q.right - px(14), q.bottom), DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, SA(th, th->text)); }
+        else {
+            HICON ic = icon_for_file(r->kind == 2 ? L"cmd.exe" : r->path); int hot = g_hover_kind == (r->kind == 2 ? HK_RUN : HK_APP) && !wcscmp(g_hover_path, r->path); int w = q.right - q.left;
+            if (g_rmode == 0) { RECT rr = R(q.left, q.top, q.right - px(8), q.bottom); if (hot) hl(dc, rr, glass, th); int isz = px(24) < rh - 6 ? px(24) : rh - 6;
+                g_icon_name(dc, ic, r->name, q.left + px(14) + ind, q.top + (rh - isz) / 2, isz, cfg_int("start_icon_alpha"));
+                g_text(dc, r->name, R(q.left + px(50) + ind, q.top, q.right - px(14), q.bottom), DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, SA(th, th->text)); }
+            else if (g_rmode == 1) { if (hot) hl(dc, q, glass, th); int isz = (w < rh ? w : rh) * 46 / 100; g_icon_name(dc, ic, r->name, (q.left + q.right) / 2 - isz / 2, q.top + px(6), isz, cfg_int("start_icon_alpha"));
+                HGDIOBJ o = SelectObject(dc, g_font_small); g_text(dc, r->name, R(q.left + 2, q.top + px(10) + isz, q.right - 2, q.bottom - 2), DT_CENTER | DT_WORDBREAK | DT_END_ELLIPSIS | DT_NOPREFIX, SA(th, th->text)); SelectObject(dc, o); }
+            else { COLORREF col = tile_color(i, r->path, ic, th); if (glass) g_alpha(dc, q, col, 225); else g_fill(dc, q, col); if (hot) g_frame(dc, q, RGB(255, 255, 255), 2);
+                int isz = (w < rh ? w : rh) * 42 / 100; g_icon_name(dc, ic, r->name, q.left + px(10), q.top + (rh - isz) / 2 - px(8), isz, cfg_int("start_icon_alpha"));
+                g_text(dc, r->name, R(q.left + px(6), q.bottom - px(28), q.right - px(4), q.bottom - px(4)), DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, SA(th, RGB(255, 255, 255))); }
         }
-        ry += rh;
     }
     SelectClipRgn(dc, NULL); DeleteObject(rgn);
     int ch = content_h(), vh = area.bottom - area.top; if (ch > vh) { int t = vh * vh / ch; if (t < px(24)) t = px(24); int ty = area.top + (int)((double)g_scroll / (ch - vh) * (vh - t)); g_alpha(dc, R(area.right - px(6), ty, area.right - px(2), ty + t), th->text, 90); }
@@ -398,20 +426,23 @@ static void draw_links(HDC dc, const Geo *g, const Theme *th, int glass) {
 }
 static int show_rows(const Geo *g) { return g->mode == LY_GRID ? (g_grid_all || g_query[0]) : g->has_list; }
 static RECT rows_area(const Geo *g) { return g->mode == LY_GRID ? g->pane : R(g->list.left, g->list.top + g->list_top, g->list.right, g->list.bottom); }
+static void prep_rows(const Geo *g) { if (g->has_list || g->mode == LY_GRID) { RECT a = rows_area(g); lay_rows(a.right - a.left - px(8)); } }
 
 static void draw_tiles(HDC dc, const Geo *g, const Theme *th, int glass) {
-    HRGN rgn = CreateRectRgn(g->pane.left, g->pane.top + px(44), g->pane.right, g->pane.bottom); SelectClipRgn(dc, rgn); int flat = g->mode == LY_GRID;
+    HRGN rgn = CreateRectRgn(g->pane.left, g->pane.top + px(44), g->pane.right, g->pane.bottom); SelectClipRgn(dc, rgn); int flat = g->mode == LY_GRID || g_pane_style == 1;
     for (int i = 0; i < g_ntiles; i++) {
         Tile *t = &g_tiles[i]; RECT r = tile_screen(t); if (r.bottom <= g->pane.top + px(44) || r.top >= g->pane.bottom) continue;
         HICON ic = icon_for_file(t->path); int hot = g_hover_kind == HK_TILE && !wcscmp(g_hover_path, t->path); int w = r.right - r.left, h = r.bottom - r.top;
         wchar_t nm[128]; display_name(t->path, nm, 128);
-        if (flat) { if (hot) hl(dc, r, glass, th); int isz = (int)((w < h ? w : h) * 0.48); g_icon_a(dc, ic, r.left + (w - isz) / 2, r.top + px(6), isz, cfg_int("start_icon_alpha"));
+        if (g_pane_style == 2) { if (hot) hl(dc, r, glass, th); int isz = h - px(10) < px(32) ? h - px(10) : px(32); g_icon_name(dc, ic, nm, r.left + px(8), r.top + (h - isz) / 2, isz, cfg_int("start_icon_alpha"));
+            g_text(dc, nm, R(r.left + isz + px(16), r.top, r.right - px(6), r.bottom), DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, SA(th, th->text)); continue; }
+        if (flat) { if (hot) hl(dc, r, glass, th); int isz = (int)((w < h ? w : h) * 0.48); g_icon_name(dc, ic, nm, r.left + (w - isz) / 2, r.top + px(6), isz, cfg_int("start_icon_alpha"));
             g_text(dc, nm, R(r.left + 2, r.top + px(8) + isz, r.right - 2, r.bottom - 2), DT_CENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, SA(th, th->text)); continue; }
         COLORREF color = tile_color(i, t->path, ic, th); if (glass) g_alpha(dc, r, color, 225); else g_fill(dc, r, color);
         if (hot) g_frame(dc, r, RGB(255, 255, 255), 2);
         double f = t->sw == 1 && t->sh == 1 ? 0.42 : (t->sw == 2 && t->sh == 1 ? 0.38 : 0.34); int isz = (int)((w < h ? w : h) * f); if (isz < 16) isz = 16; if (isz > 96) isz = 96;
         int wide = t->sw == 2 && t->sh == 1; int ix = wide ? r.left + px(12) : r.left + (w - isz) / 2, iy = wide ? r.top + (h - isz) / 2 - px(6) : r.top + (int)(h * 0.14);
-        g_icon_a(dc, ic, ix, iy, isz, cfg_int("start_icon_alpha"));
+        g_icon_name(dc, ic, nm, ix, iy, isz, cfg_int("start_icon_alpha"));
         g_text(dc, nm, R(r.left + px(6), r.bottom - px(26), r.right - px(4), r.bottom - px(4)), DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, SA(th, RGB(255, 255, 255)));
     }
     SelectClipRgn(dc, NULL); DeleteObject(rgn);
@@ -440,6 +471,7 @@ static void draw(HDC dc, int W, int H) {
         if (links) draw_links(dc, &g, &th, glass); else draw_tiles(dc, &g, &th, glass);
     } else if (g.mode == LY_GRID && show_rows(&g)) { HGDIOBJ o = SelectObject(dc, g_font_big); g_text(dc, g_query[0] ? L"Search results" : L"All apps", g.title, DT_VCENTER | DT_SINGLELINE, th.text); SelectObject(dc, o); }
     if (g.sw.right > g.sw.left && g.has_pane) { if (g_hover_kind == HK_SW) hl(dc, g.sw, glass, &th); el_draw(dc, E_SM_SWITCH, sq(g.sw, 62), th.text, G_SWITCH); }
+    if (g.modeb.right > g.modeb.left) { int on = cfg_bool("full_desktop"); if (g_hover_kind == HK_MODE || on) hl(dc, g.modeb, glass, &th); el_draw(dc, E_SM_MODE, sq(g.modeb, 62), IA(&th, on ? th.accent : th.text), G_DESK); }
     if (g.mode == LY_GRID) { if (g_hover_kind == HK_ALL) hl(dc, g.all, glass, &th); g_text(dc, g_grid_all ? L"Back" : L"All apps >", g.all, DT_VCENTER | DT_CENTER | DT_SINGLELINE, th.text); }
     for (int i = 0; i < 6; i++) { if (g.ri[i].right <= g.ri[i].left) continue; wchar_t key[8]; _snwprintf(key, 8, L"#%d", i);
         int hot = g_hover_kind == HK_RAIL && !wcscmp(g_hover_path, key); if (hot || (i == 1 && cfg_bool("start_programs_mode"))) hl(dc, g.ri[i], glass, &th);
@@ -463,11 +495,14 @@ static int hit(int x, int y, int *aux, wchar_t *path) {
     if (g.user.right > g.user.left && in_rect(&g.user, x, y)) return HK_USER;
     if (g.add.right > g.add.left && in_rect(&g.add, x, y)) return HK_ADD;
     if (g.sw.right > g.sw.left && g.has_pane && in_rect(&g.sw, x, y)) return HK_SW;
+    if (g.modeb.right > g.modeb.left && in_rect(&g.modeb, x, y)) return HK_MODE;
     if (g.mode == LY_GRID && in_rect(&g.all, x, y)) return HK_ALL;
     if (g.has_search && in_rect(&g.search, x, y)) return HK_SEARCH;
-    if (g_edit_layout != 2 && show_rows(&g)) { RECT a = rows_area(&g); if (in_rect(&a, x, y)) { int ry = a.top - g_scroll;
-            for (int i = 0; i < g_nrows; i++) { int h = row_h(&g_rows[i]); if (y >= ry && y < ry + h && g_rows[i].kind != 0) { *aux = i; lstrcpyW(path, g_rows[i].kind == 3 ? g_rows[i].name : g_rows[i].path);
-                    return g_rows[i].kind == 3 ? HK_GROUP : (g_rows[i].kind == 2 ? HK_RUN : HK_APP); } ry += h; } return HK_NONE; } }
+    prep_rows(&g);
+    if (g_edit_layout != 2 && show_rows(&g)) { RECT a = rows_area(&g); if (in_rect(&a, x, y)) {
+            for (int i = 0; i < g_nrows; i++) { if (g_rows[i].kind == 0) continue; RECT q = g_rr[i]; OffsetRect(&q, a.left, a.top - g_scroll);
+                if (in_rect(&q, x, y)) { *aux = i; lstrcpyW(path, g_rows[i].kind == 3 ? g_rows[i].name : g_rows[i].path); return g_rows[i].kind == 3 ? HK_GROUP : (g_rows[i].kind == 2 ? HK_RUN : HK_APP); } }
+            return HK_NONE; } }
     if (g_edit_layout != 2 && g.has_pane && in_rect(&g.pane, x, y) && y >= g.pane.top + px(44) && !(g.mode == LY_GRID && show_rows(&g))) {
         if (cfg_str("start_pane")[0] == 'l') { int ids[NLINKS], n = links_shown(ids, NLINKS); for (int k = 0; k < n; k++) { RECT r; link_rect(&g, k, &r); if (in_rect(&r, x, y)) { *aux = ids[k]; _snwprintf(path, MAX_PATH, L"#%d", k); return HK_LINK; } } }
         else for (int i = 0; i < g_ntiles; i++) { RECT r = tile_screen(&g_tiles[i]); if (in_rect(&r, x, y)) { *aux = i; lstrcpyW(path, g_tiles[i].path); return HK_TILE; } }
@@ -476,7 +511,7 @@ static int hit(int x, int y, int *aux, wchar_t *path) {
     return HK_NONE;
 }
 static int kind_element(int kind, int aux) {
-    switch (kind) { case HK_RAIL: return RAIL_EL[aux]; case HK_USER: return E_SM_USER; case HK_ADD: return E_SM_ADD; case HK_SW: return E_SM_SWITCH; case HK_SEARCH: return E_SM_SEARCH; case HK_LISTW: return E_SM_LIST; case HK_PANEW: return E_SM_PANE; default: return -1; }
+    switch (kind) { case HK_RAIL: return RAIL_EL[aux]; case HK_USER: return E_SM_USER; case HK_ADD: return E_SM_ADD; case HK_SW: return E_SM_SWITCH; case HK_SEARCH: return E_SM_SEARCH; case HK_MODE: return E_SM_MODE; case HK_LISTW: return E_SM_LIST; case HK_PANEW: return E_SM_PANE; default: return -1; }
 }
 
 void start_close(void) {
@@ -562,7 +597,7 @@ static void rail_action(int i) {
 static int edit_rects(const Geo *g, int *ids, RECT *rc) {
     int n = 0;
     if (g->has_pane) { ids[n] = E_SM_PANE; rc[n++] = g->pane; } if (g->has_list) { ids[n] = E_SM_LIST; rc[n++] = g->list; }
-    if (g->user.right > g->user.left) { ids[n] = E_SM_USER; rc[n++] = g->user; } if (g->add.right > g->add.left) { ids[n] = E_SM_ADD; rc[n++] = g->add; }
+    if (g->user.right > g->user.left) { ids[n] = E_SM_USER; rc[n++] = g->user; } if (g->add.right > g->add.left) { ids[n] = E_SM_ADD; rc[n++] = g->add; } if (g->modeb.right > g->modeb.left) { ids[n] = E_SM_MODE; rc[n++] = g->modeb; }
     if (g->search.right > g->search.left) { ids[n] = E_SM_SEARCH; rc[n++] = g->search; } if (g->sw.right > g->sw.left && g->has_pane) { ids[n] = E_SM_SWITCH; rc[n++] = g->sw; }
     for (int i = 0; i < 6; i++) if (g->ri[i].right > g->ri[i].left) { ids[n] = RAIL_EL[i]; rc[n++] = g->ri[i]; }
     return n;
@@ -609,7 +644,7 @@ static LRESULT CALLBACK start_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
     case WM_CTLCOLOREDIT: { Theme th = app_theme(0); SetTextColor((HDC)w, th.text); SetBkColor((HDC)w, th.input);
         static HBRUSH br; static COLORREF last = (COLORREF)-1; if (last != th.input) { if (br) DeleteObject(br); br = CreateSolidBrush(th.input); last = th.input; } return (LRESULT)br; }
     case WM_COMMAND: if (LOWORD(w) == EDIT_ID && HIWORD(w) == EN_CHANGE) { wchar_t t[128]; GetWindowTextW(g_edit, t, 128); if (wcscmp(t, g_query)) { lstrcpynW(g_query, t, 128); build_rows(); invalidate(); bar_invalidate(); } } return 0;
-    case WM_ACTIVATE: if (LOWORD(w) == WA_INACTIVE && g_start_visible && g_menu_depth == 0 && g_edit_layout != 2) { HWND nw = (HWND)l; if (nw != g_edit && nw != settings_hwnd()) start_close(); } return 0;
+    case WM_ACTIVATE: if (LOWORD(w) == WA_INACTIVE && g_start_visible && g_menu_depth == 0 && g_edit_layout != 2 && cfg_bool("start_autoclose") && !(editor_hwnd() && IsWindowVisible(editor_hwnd()))) { HWND nw = (HWND)l; if (nw != g_edit && nw != settings_hwnd()) start_close(); } return 0;
     case WM_TIMER: if (w == 5 && g_start_visible) { g_shuffle_seed++; invalidate(); } return 0;
     case WM_MOUSEMOVE: {
         int x = (short)LOWORD(l), y = (short)HIWORD(l);
@@ -640,6 +675,7 @@ static LRESULT CALLBACK start_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
         case HK_USER: start_close(); settings_open_page("Startup and user"); break;
         case HK_SW: cfg_set_str("start_pane", cfg_str("start_pane")[0] == 'l' ? "tiles" : "links"); g_tile_scroll = 0; app_save(); invalidate(); break;
         case HK_ALL: g_grid_all = !g_grid_all; build_rows(); invalidate(); break;
+        case HK_MODE: start_close(); app_toggle_desktop(); break;
         }
         return 0; }
     case WM_RBUTTONUP: { int aux; wchar_t p[MAX_PATH]; int k = hit((short)LOWORD(l), (short)HIWORD(l), &aux, p);
@@ -688,3 +724,10 @@ void start_toggle(void) {
 }
 void start_open_search(void) { if (!g_start_visible) start_toggle(); if (g_hwnd) { SetForegroundWindow(g_hwnd); if (g_edit) SetFocus(g_edit); } }
 void start_destroy(void) { if (g_hwnd) { DestroyWindow(g_hwnd); g_hwnd = NULL; g_edit = NULL; } }
+
+/* ---- used by the layout editor window ---- */
+void start_render(HDC dc, int W, int H) { if (!g_napps) { scan(); build_rows(); } draw(dc, W, H); }
+int start_element_rects(int *ids, RECT *rc, int max, int *W, int *H) {
+    Geo g; geometry(&g); *W = g.W; *H = g.H; int ti[16]; RECT tr[16]; int n = edit_rects(&g, ti, tr); if (n > max) n = max;
+    for (int i = 0; i < n; i++) { ids[i] = ti[i]; rc[i] = tr[i]; } return n;
+}

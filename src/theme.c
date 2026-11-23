@@ -121,7 +121,7 @@ RECT bar_rect(void) {
 RECT work_rect(void) {
     int sw, sh, gap, mar; screen_size(&sw, &sh); bar_margins(&gap, &mar); (void)mar;
     int t = px(cfg_int("height")) + gap; RECT r = { 0, 0, sw, sh };
-    if (cfg_bool("bar_autohide")) return r;
+    if (cfg_bool("bar_autohide") && cfg_bool("strip_enabled")) return r;
     const char *pos = cfg_str("position");
     if (!strcmp(pos, "top")) r.top = t; else if (!strcmp(pos, "left")) r.left = t; else if (!strcmp(pos, "right")) r.right = sw - t; else r.bottom = sh - t;
     return r;
@@ -192,4 +192,13 @@ void shuffle_theme(void) {
     cfg_set_str("skin_theme", skin_theme_name(rand() % skin_theme_count()));
     cfg_set_str("ctrl_preset", sys_preset_name(rand() % sys_preset_count())); cfg_set_bool("ctrl_enabled", 1);
     JNode *cc = cfg_node("ctrl_colors"); if (cc) { json_free(cc->child); cc->child = NULL; }
+}
+
+void shuffle_os(int everything) {
+    srand(GetTickCount()); os_theme_apply(os_theme_name(rand() % os_theme_count()));
+    if (!everything) return;
+    shuffle_theme();
+    static const char *shapes[] = { "none", "circle", "square", "rounded" }, *sizes[] = { "small", "normal", "large" }, *views[] = { "tiles", "grid3", "grid4", "list2" }, *games[] = { "ps5", "steam", "switch", "xbox", "retro" }, *styles[] = { "ninebox", "winlogo", "orb" };
+    cfg_set_str("icon_shape", shapes[rand() % 4]); cfg_set_int("glass_opacity", 60 + rand() % 41); cfg_set_int("tile_level", 3 + rand() % 4); cfg_set_str("start_size", sizes[rand() % 3]);
+    cfg_set_str("pane_view", views[rand() % 4]); cfg_set_str("game_theme", games[rand() % 5]); cfg_set_str("start_style", styles[rand() % 3]); cfg_set_int("pill_seed", 1 + rand() % 9999);
 }

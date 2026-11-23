@@ -106,29 +106,50 @@ void img_clear(void) {
     g_nimg = 0;
 }
 
-/* Wallpaper: modes fill (cover), fit, stretch, center, tile. Cached for the last size. */
-static struct { wchar_t path[MAX_PATH]; int w, h; char mode[12]; HBITMAP bmp; } g_wall;
-int img_fill(HDC dc, const wchar_t *path, int W, int H, const char *mode) {
-    if (!path || !path[0] || W < 8 || H < 8 || !gp_load()) return 0;
-    if (!g_wall.bmp || g_wall.w != W || g_wall.h != H || _wcsicmp(g_wall.path, path) || strcmp(g_wall.mode, mode)) {
-        if (g_wall.bmp) { DeleteObject(g_wall.bmp); g_wall.bmp = NULL; }
-        void *src = NULL; if (G.from_file(path, &src) != 0 || !src) return 0;
-        UINT sw = 0, sh = 0; G.width(src, &sw); G.height(src, &sh); if (!sw || !sh) { G.dispose(src); return 0; }
-        BITMAPINFO bi; memset(&bi, 0, sizeof bi); bi.bmiHeader.biSize = sizeof bi.bmiHeader; bi.bmiHeader.biWidth = W; bi.bmiHeader.biHeight = -H; bi.bmiHeader.biPlanes = 1; bi.bmiHeader.biBitCount = 32; bi.bmiHeader.biCompression = BI_RGB;
-        void *bits = NULL; HBITMAP hb = CreateDIBSection(NULL, &bi, DIB_RGB_COLORS, &bits, NULL, 0); if (!hb || !bits) { G.dispose(src); return 0; }
-        memset(bits, 0, (size_t)W * H * 4); void *dst = NULL, *gfx = NULL;
-        if (G.from_scan(W, H, W * 4, 0xE200B, bits, &dst) == 0 && dst && G.gfx(dst, &gfx) == 0 && gfx) {
-            G.interp(gfx, 7); int dw = W, dh = H, dx = 0, dy = 0;
-            if (!strcmp(mode, "fill")) { double k = (double)W / sw > (double)H / sh ? (double)W / sw : (double)H / sh; dw = (int)(sw * k); dh = (int)(sh * k); dx = (W - dw) / 2; dy = (H - dh) / 2; G.draw(gfx, src, dx, dy, dw, dh); }
-            else if (!strcmp(mode, "fit")) { double k = (double)W / sw < (double)H / sh ? (double)W / sw : (double)H / sh; dw = (int)(sw * k); dh = (int)(sh * k); dx = (W - dw) / 2; dy = (H - dh) / 2; G.draw(gfx, src, dx, dy, dw, dh); }
-            else if (!strcmp(mode, "center")) G.draw(gfx, src, (W - (int)sw) / 2, (H - (int)sh) / 2, (int)sw, (int)sh);
-            else if (!strcmp(mode, "tile")) { for (int y = 0; y < H; y += (int)sh) for (int x = 0; x < W; x += (int)sw) G.draw(gfx, src, x, y, (int)sw, (int)sh); }
-            else G.draw(gfx, src, 0, 0, W, H);
-            G.del_gfx(gfx);
-        }
-        if (dst) G.dispose(dst); G.dispose(src);
-        lstrcpynW(g_wall.path, path, MAX_PATH); g_wall.w = W; g_wall.h = H; lstrcpynA(g_wall.mode, mode, 12); g_wall.bmp = hb;
+/* Rendering of whole pictures (wallpaper, backgrounds, image tiles): fill (cover), fit, stretch, center, tile.
+ * A few sizes stay cached so cross-fades do not reload files. */
+static HBITMAP render_img(const wchar_t *path, int W, int H, const char *mode) {
+    if (!path || !path[0] || W < 8 || H < 8 || !gp_load()) return NULL;
+    void *src = NULL; if (G.from_file(path, &src) != 0 || !src) return NULL;
+    UINT sw = 0, sh = 0; G.width(src, &sw); G.height(src, &sh); if (!sw || !sh) { G.dispose(src); return NULL; }
+    BITMAPINFO bi; memset(&bi, 0, sizeof bi); bi.bmiHeader.biSize = sizeof bi.bmiHeader; bi.bmiHeader.biWidth = W; bi.bmiHeader.biHeight = -H; bi.bmiHeader.biPlanes = 1; bi.bmiHeader.biBitCount = 32; bi.bmiHeader.biCompression = BI_RGB;
+    void *bits = NULL; HBITMAP hb = CreateDIBSection(NULL, &bi, DIB_RGB_COLORS, &bits, NULL, 0); if (!hb || !bits) { G.dispose(src); return NULL; }
+    memset(bits, 0, (size_t)W * H * 4); void *dst = NULL, *gfx = NULL;
+    if (G.from_scan(W, H, W * 4, 0xE200B, bits, &dst) == 0 && dst && G.gfx(dst, &gfx) == 0 && gfx) {
+        G.interp(gfx, 7); int dw = W, dh = H;
+        if (!strcmp(mode, "fill")) { double k = (double)W / sw > (double)H / sh ? (double)W / sw : (double)H / sh; dw = (int)(sw * k); dh = (int)(sh * k); G.draw(gfx, src, (W - dw) / 2, (H - dh) / 2, dw, dh); }
+        else if (!strcmp(mode, "fit")) { double k = (double)W / sw < (double)H / sh ? (double)W / sw : (double)H / sh; dw = (int)(sw * k); dh = (int)(sh * k); G.draw(gfx, src, (W - dw) / 2, (H - dh) / 2, dw, dh); }
+        else if (!strcmp(mode, "center")) G.draw(gfx, src, (W - (int)sw) / 2, (H - (int)sh) / 2, (int)sw, (int)sh);
+        else if (!strcmp(mode, "tile")) { for (int y = 0; y < H; y += (int)sh) for (int x = 0; x < W; x += (int)sw) G.draw(gfx, src, x, y, (int)sw, (int)sh); }
+        else G.draw(gfx, src, 0, 0, W, H);
+        G.del_gfx(gfx);
     }
-    HDC mem = CreateCompatibleDC(dc); HGDIOBJ old = SelectObject(mem, g_wall.bmp); BLENDFUNCTION bf = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
-    AlphaBlend(dc, 0, 0, W, H, mem, 0, 0, W, H, bf); SelectObject(mem, old); DeleteDC(mem); return 1;
+    if (dst) G.dispose(dst); G.dispose(src); return hb;
+}
+typedef struct { wchar_t path[MAX_PATH]; int w, h; char mode[12]; HBITMAP bmp; DWORD used; } Pic;
+static Pic g_pic[6];
+static HBITMAP pic_get(const wchar_t *path, int W, int H, const char *mode) {
+    int free_i = -1, old_i = 0;
+    for (int i = 0; i < 6; i++) { if (g_pic[i].bmp && g_pic[i].w == W && g_pic[i].h == H && !strcmp(g_pic[i].mode, mode) && !_wcsicmp(g_pic[i].path, path)) { g_pic[i].used = GetTickCount(); return g_pic[i].bmp; }
+        if (!g_pic[i].bmp && free_i < 0) free_i = i; if (g_pic[i].used < g_pic[old_i].used) old_i = i; }
+    HBITMAP hb = render_img(path, W, H, mode); if (!hb) return NULL; int slot = free_i >= 0 ? free_i : old_i; if (g_pic[slot].bmp) DeleteObject(g_pic[slot].bmp);
+    lstrcpynW(g_pic[slot].path, path, MAX_PATH); g_pic[slot].w = W; g_pic[slot].h = H; lstrcpynA(g_pic[slot].mode, mode, 12); g_pic[slot].bmp = hb; g_pic[slot].used = GetTickCount(); return hb;
+}
+static int pic_draw(HDC dc, const wchar_t *path, RECT r, const char *mode, int alpha_pct) {
+    int w = r.right - r.left, h = r.bottom - r.top; HBITMAP hb = pic_get(path, w, h, mode); if (!hb) return 0;
+    HDC mem = CreateCompatibleDC(dc); HGDIOBJ old = SelectObject(mem, hb); BLENDFUNCTION bf = { AC_SRC_OVER, 0, (BYTE)(alpha_pct >= 100 ? 255 : (alpha_pct < 0 ? 0 : 255 * alpha_pct / 100)), AC_SRC_ALPHA };
+    AlphaBlend(dc, r.left, r.top, w, h, mem, 0, 0, w, h, bf); SelectObject(mem, old); DeleteDC(mem); return 1;
+}
+int img_fill(HDC dc, const wchar_t *path, int W, int H, const char *mode) { RECT r = { 0, 0, W, H }; return pic_draw(dc, path, r, mode, 100); }
+int img_fill_a(HDC dc, const wchar_t *path, int W, int H, const char *mode, int alpha_pct) { RECT r = { 0, 0, W, H }; return pic_draw(dc, path, r, mode, alpha_pct); }
+int img_cover(HDC dc, const wchar_t *path, RECT r, int alpha_pct) { return pic_draw(dc, path, r, "fill", alpha_pct); }
+
+/* Image file -> HICON, so picture-based icons work everywhere a normal icon does. */
+static struct { wchar_t path[MAX_PATH]; int size; HICON ic; } g_ico[64]; static int g_nico;
+HICON img_to_icon(const wchar_t *path, int size) {
+    for (int i = 0; i < g_nico; i++) if (g_ico[i].size == size && !_wcsicmp(g_ico[i].path, path)) return g_ico[i].ic;
+    Img *im = img_get(path, size, 0, 0); HICON ic = NULL;
+    if (im->ok && im->bmp) { ICONINFO ii; memset(&ii, 0, sizeof ii); ii.fIcon = TRUE; ii.hbmColor = im->bmp; ii.hbmMask = CreateBitmap(size, size, 1, 1, NULL); ic = CreateIconIndirect(&ii); if (ii.hbmMask) DeleteObject(ii.hbmMask); }
+    if (g_nico < 64) { lstrcpynW(g_ico[g_nico].path, path, MAX_PATH); g_ico[g_nico].size = size; g_ico[g_nico++].ic = ic; }
+    return ic;
 }

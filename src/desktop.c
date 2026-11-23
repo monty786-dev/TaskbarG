@@ -42,6 +42,7 @@ static JNode *add_item(const char *type, const char *path, const char *widget, i
     si(o, "x", x); si(o, "y", y); si(o, "w", w); si(o, "h", h); json_push(a, o); g_dirty = 1; return o;
 }
 void desktop_add_shortcut(const wchar_t *path, const char *type) { char *u = utf8_from_w(path); int c = cell(); if (!strcmp(type, "tile")) add_item("tile", u, "", c * 2, c, "user"); else add_item("shortcut", u, "", c, c, "user"); free(u); app_save(); if (g_w) InvalidateRect(g_w, NULL, FALSE); }
+void desktop_add_image(const wchar_t *img, const wchar_t *target) { char *u = utf8_from_w(img), *t = utf8_from_w(target ? target : L""); int c = cell(); JNode *o = add_item("image", t, "", c * 2, c * 2, "user"); if (o) json_put(o, "icon", json_str(u)); free(u); free(t); app_save(); if (g_w) InvalidateRect(g_w, NULL, FALSE); }
 void desktop_add_widget(const char *kind) { int c = cell(); add_item("widget", "", kind, !strcmp(kind, "calendar") ? c * 2 : c * 2, !strcmp(kind, "calendar") ? c * 2 : c, "user"); app_save(); if (g_w) InvalidateRect(g_w, NULL, FALSE); }
 void desktop_clear(void) { JNode *a = items(); if (a) { json_free(a->child); a->child = NULL; } app_save(); if (g_w) InvalidateRect(g_w, NULL, FALSE); }
 void desktop_arrange(void) {
@@ -95,8 +96,9 @@ static COLORREF tile_col(JNode *it, int idx) {
     static const COLORREF P[] = { RGB(0,120,215), RGB(16,137,62), RGB(218,59,1), RGB(142,140,216), RGB(0,153,188), RGB(194,57,179), RGB(209,52,56), RGB(0,178,148) };
     const char *c = gs(it, "color"); return c[0] ? c_hex(c, app_accent()) : P[idx % 8];
 }
-static void draw_widget(HDC dc, RECT r, const char *kind) {
-    Spec sp; app_spec(&sp); COLORREF bg = c_mix(RGB(0, 0, 0), sp.bg, 0.8); g_alpha(dc, r, bg, 190); g_frame(dc, r, c_mix(bg, RGB(255, 255, 255), 0.2), 1);
+static int item_alpha(JNode *it) { int a = gi(it, "alpha", -1); if (a < 0) a = cfg_int("widget_alpha"); return a < 0 ? 0 : (a > 100 ? 100 : a); }
+static void draw_widget(HDC dc, RECT r, const char *kind, int alpha) {
+    Spec sp; app_spec(&sp); COLORREF bg = c_mix(RGB(0, 0, 0), sp.bg, 0.8); if (alpha > 0) g_alpha(dc, r, bg, 255 * alpha / 100); g_frame(dc, r, c_mix(bg, RGB(255, 255, 255), 0.2), 1);
     struct tm t; clock_tm(&t); int w = r.right - r.left, h = r.bottom - r.top; wchar_t buf[96];
     if (!strcmp(kind, "clock")) { wcsftime(buf, 96, L"%I:%M", &t); if (buf[0] == L'0') memmove(buf, buf + 1, wcslen(buf) * sizeof(wchar_t));
         HFONT big = CreateFontW(-(h * 45 / 100), 0, 0, 0, 300, 0, 0, 0, 1, 0, 0, 5, 0, L"Segoe UI"); HGDIOBJ o = SelectObject(dc, big); g_text(dc, buf, R(r.left, r.top + h / 12, r.right, r.top + h * 3 / 4), DT_CENTER | DT_VCENTER | DT_SINGLELINE, RGB(255, 255, 255)); SelectObject(dc, o); DeleteObject(big);
@@ -115,16 +117,18 @@ static void draw_widget(HDC dc, RECT r, const char *kind) {
 }
 static void draw_item(HDC dc, JNode *it, int idx) {
     RECT r = item_rect(it); const char *type = gs(it, "type"); int sel = idx == g_sel, hot = idx == g_hot; int w = r.right - r.left, h = r.bottom - r.top;
-    if (!strcmp(type, "widget")) { draw_widget(dc, r, gs(it, "widget")); }
+    int al = item_alpha(it);
+    if (!strcmp(type, "widget")) { draw_widget(dc, r, gs(it, "widget"), al); }
+    else if (!strcmp(type, "image")) { wchar_t im[MAX_PATH]; w_from_utf8_buf(gs(it, "icon"), im, MAX_PATH); if (!img_cover(dc, im, r, al)) { g_alpha(dc, r, RGB(60, 60, 70), 255 * al / 100); glyph_draw(G_PIC, dc, R(r.left + w / 4, r.top + h / 4, r.right - w / 4, r.bottom - h / 4), RGB(200, 200, 210)); } }
     else {
         wchar_t path[MAX_PATH], lab[128]; w_from_utf8_buf(gs(it, "path"), path, MAX_PATH); w_from_utf8_buf(gs(it, "label"), lab, 128);
         HICON ic = icon_for_file(path); wchar_t cust[MAX_PATH]; w_from_utf8_buf(gs(it, "icon"), cust, MAX_PATH);
-        if (!strcmp(type, "tile")) { g_fill(dc, r, tile_col(it, idx)); int s = (w < h ? w : h) * 55 / 100; RECT ir = R(r.left + px(10), (r.top + r.bottom) / 2 - s / 2 - px(6), r.left + px(10) + s, (r.top + r.bottom) / 2 + s / 2 - px(6));
-            if (!cust[0] || !img_draw(dc, cust, ir, 0, 0)) DrawIconEx(dc, ir.left, ir.top, ic, s, s, 0, NULL, DI_NORMAL);
+        if (!strcmp(type, "tile")) { if (al > 0) g_alpha(dc, r, tile_col(it, idx), 255 * al / 100); int s = (w < h ? w : h) * 55 / 100; RECT ir = R(r.left + px(10), (r.top + r.bottom) / 2 - s / 2 - px(6), r.left + px(10) + s, (r.top + r.bottom) / 2 + s / 2 - px(6));
+            if (!cust[0] || !img_draw(dc, cust, ir, 0, 0)) g_icon_name(dc, ic, lab, ir.left, ir.top, s, 100);
             shadow_text(dc, lab, R(r.left + px(8), r.bottom - px(28), r.right - px(6), r.bottom - px(4)), DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX); }
         else { if (sel || hot) g_alpha(dc, r, RGB(255, 255, 255), sel ? 70 : 40); int lab_h = cfg_bool("desktop_labels") ? px(34) : 0; int s = (h - lab_h - px(8) < w - px(8) ? h - lab_h - px(8) : w - px(8)); int cap = px(cfg_int("desktop_icon_size")) * 3; if (s > cap) s = cap; if (s < 16) s = 16;
             RECT ir = R((r.left + r.right) / 2 - s / 2, r.top + px(4), (r.left + r.right) / 2 + s / 2, r.top + px(4) + s);
-            if (!cust[0] || !img_draw(dc, cust, ir, 0, 0)) DrawIconEx(dc, ir.left, ir.top, ic, s, s, 0, NULL, DI_NORMAL);
+            if (!cust[0] || !img_draw(dc, cust, ir, 0, 0)) g_icon_name(dc, ic, lab, ir.left, ir.top, s, 100);
             if (lab_h) shadow_text(dc, lab, R(r.left + 2, ir.bottom + px(2), r.right - 2, r.bottom - 2), DT_CENTER | DT_WORDBREAK | DT_END_ELLIPSIS | DT_NOPREFIX); }
     }
     if (sel) { g_frame(dc, r, app_accent(), 2); if (!locked(it)) g_fill(dc, R(r.right - px(10), r.bottom - px(10), r.right, r.bottom), app_accent()); }
@@ -154,11 +158,12 @@ static void set_size(JNode *it, int wc, int hc) { int c = cell(); si(it, "w", wc
 
 static void item_menu(int idx) {
     JNode *it = item_at(idx); if (!it) return; int lk = gb(it, "lock"); const char *type = gs(it, "type");
-    const wchar_t *lab[14]; int id[14], fl[14], n = 0;
+    const wchar_t *lab[20]; int id[20], fl[20], n = 0;
     #define ADD(i, t, f) do { lab[n] = (t); id[n] = (i); fl[n] = (f); n++; } while (0)
     if (strcmp(type, "widget")) ADD(1, L"Open", 0); ADD(2, lk ? L"Unlock this item" : L"Lock this item", 0); ADD(-1, NULL, 0);
     ADD(3, L"Size: small", 0); ADD(4, L"Size: medium", 0); ADD(5, L"Size: wide", 0); ADD(6, L"Size: large", 0);
-    if (strcmp(type, "widget")) { ADD(7, L"Change icon...", 0); ADD(8, L"Pin to Start", 0); ADD(9, L"Add to tray", 0); } ADD(-1, NULL, 0); ADD(10, L"Remove from desktop", 0);
+    if (!strcmp(type, "widget") || !strcmp(type, "tile") || !strcmp(type, "image")) { ADD(-1, NULL, 0); ADD(11, L"More transparent (-10%)", 0); ADD(12, L"Less transparent (+10%)", 0); ADD(13, L"Fully transparent (0%)", 0); ADD(14, L"Fully visible (100%)", 0); }
+    if (strcmp(type, "widget")) { ADD(7, !strcmp(type, "image") ? L"Change picture..." : L"Change icon...", 0); ADD(8, L"Pin to Start", 0); ADD(9, L"Add to tray", 0); } ADD(-1, NULL, 0); ADD(10, L"Remove from desktop", 0);
     #undef ADD
     int cmd = app_popup(g_w, lab, id, fl, n, TPM_RETURNCMD | TPM_RIGHTBUTTON, POPUP_CUR, POPUP_CUR); wchar_t wp[MAX_PATH]; w_from_utf8_buf(gs(it, "path"), wp, MAX_PATH); char buf[320];
     switch (cmd) {
@@ -167,17 +172,20 @@ static void item_menu(int idx) {
     case 7: if (pick("img", buf, 320)) json_put(it, "icon", json_str(buf)); break;
     case 8: { JNode *p = cfg_node("start_pins"); if (p && !cfg_list_has("start_pins", gs(it, "path"))) json_push(p, json_str(gs(it, "path"))); break; }
     case 9: tray_add_app(wp); break; case 10: remove_item(idx); return;
+    case 11: case 12: { int a = item_alpha(it) + (cmd == 11 ? -10 : 10); si(it, "alpha", a < 0 ? 0 : (a > 100 ? 100 : a)); break; }
+    case 13: si(it, "alpha", 0); break; case 14: si(it, "alpha", 100); break;
     }
     if (cmd > 0) { app_save(); InvalidateRect(g_w, NULL, FALSE); }
 }
 static void desk_menu(void) {
-    const wchar_t *lab[] = { L"Add shortcut...", L"Add app tile...", L"Add clock widget", L"Add calendar widget", L"Add system widget", NULL, L"Lock all icons (no moving)", L"Auto-arrange", L"Sync Wine / desktop shortcuts", NULL, L"Change wallpaper...", L"Desktop settings" };
-    int id[] = { 1, 2, 3, 4, 5, -1, 6, 7, 8, -1, 9, 10 }, fl[] = { 0, 0, 0, 0, 0, 0, cfg_bool("desktop_lock") ? MF_CHECKED : 0, 0, 0, 0, 0, 0 };
-    int cmd = app_popup(g_w, lab, id, fl, 12, TPM_RETURNCMD | TPM_RIGHTBUTTON, POPUP_CUR, POPUP_CUR); char buf[320];
+    const wchar_t *lab[] = { L"Add shortcut...", L"Add app tile...", L"Add clock widget", L"Add calendar widget", L"Add system widget", L"Add image tile...", NULL, L"Lock all icons (no moving)", L"Auto-arrange", L"Sync Wine / desktop shortcuts", NULL, L"Change wallpaper...", L"Switch to normal mode", L"Desktop settings" };
+    int id[] = { 1, 2, 3, 4, 5, 11, -1, 6, 7, 8, -1, 9, 12, 10 }, fl[] = { 0, 0, 0, 0, 0, 0, 0, cfg_bool("desktop_lock") ? MF_CHECKED : 0, 0, 0, 0, 0, 0, 0 };
+    int cmd = app_popup(g_w, lab, id, fl, 14, TPM_RETURNCMD | TPM_RIGHTBUTTON, POPUP_CUR, POPUP_CUR); char buf[320];
     if (cmd == 1 || cmd == 2) { if (pick("exe", buf, 320)) { wchar_t w[MAX_PATH]; w_from_utf8_buf(buf, w, MAX_PATH); desktop_add_shortcut(w, cmd == 1 ? "shortcut" : "tile"); } }
     else if (cmd == 3) desktop_add_widget("clock"); else if (cmd == 4) desktop_add_widget("calendar"); else if (cmd == 5) desktop_add_widget("system");
     else if (cmd == 6) { cfg_set_bool("desktop_lock", !cfg_bool("desktop_lock")); app_save(); } else if (cmd == 7) desktop_arrange(); else if (cmd == 8) desktop_sync();
-    else if (cmd == 9) { if (pick("img", buf, 320)) { cfg_set_str("wallpaper", buf); app_save(); img_clear(); } } else if (cmd == 10) settings_open_page("Full desktop");
+    else if (cmd == 9) { if (pick("img", buf, 320)) { cfg_set_str("wallpaper", buf); app_save(); img_clear(); } } else if (cmd == 10) settings_open_page("Full desktop"); else if (cmd == 12) { app_toggle_desktop(); return; }
+    else if (cmd == 11) { if (pick("img", buf, 320)) { wchar_t w[MAX_PATH]; w_from_utf8_buf(buf, w, MAX_PATH); desktop_add_image(w, NULL); } }
     InvalidateRect(g_w, NULL, FALSE);
 }
 
@@ -200,7 +208,7 @@ static LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
             if (g_mode == 1) { si(it, "x", g_ix + dx); si(it, "y", g_iy + dy); } else { si(it, "w", g_iw + dx < 40 ? 40 : g_iw + dx); si(it, "h", g_ih + dy < 40 ? 40 : g_ih + dy); } inv(g_sel); return 0; }
         int g2, i = hit(x, y, &g2); if (i != g_hot) { inv(g_hot); g_hot = i; inv(i); } return 0; }
     case WM_LBUTTONUP: if (g_drag) { g_drag = 0; ReleaseCapture(); if (g_sel >= 0) { JNode *it = item_at(g_sel); if (it) { if (g_mode == 1) snap(it); else { int c = cell(); si(it, "w", (gi(it, "w", c) + c / 4) / (c / 2) * (c / 2)); si(it, "h", (gi(it, "h", c) + c / 4) / (c / 2) * (c / 2)); } } } app_save(); InvalidateRect(h, NULL, FALSE); } return 0;
-    case WM_LBUTTONDBLCLK: { int x = (short)LOWORD(l), y = (short)HIWORD(l), g; int i = hit(x, y, &g); if (i >= 0) { JNode *it = item_at(i); if (strcmp(gs(it, "type"), "widget")) { wchar_t wp[MAX_PATH]; w_from_utf8_buf(gs(it, "path"), wp, MAX_PATH); app_run(wp, NULL, SW_SHOWNORMAL); } } return 0; }
+    case WM_LBUTTONDBLCLK: { int x = (short)LOWORD(l), y = (short)HIWORD(l), g; int i = hit(x, y, &g); if (i >= 0) { JNode *it = item_at(i); if (strcmp(gs(it, "type"), "widget") && gs(it, "path")[0]) { wchar_t wp[MAX_PATH]; w_from_utf8_buf(gs(it, "path"), wp, MAX_PATH); app_run(wp, NULL, SW_SHOWNORMAL); } } return 0; }
     case WM_RBUTTONUP: { int x = (short)LOWORD(l), y = (short)HIWORD(l), g; int i = hit(x, y, &g); if (i >= 0) { inv(g_sel); g_sel = i; inv(i); item_menu(i); } else desk_menu(); return 0; }
     }
     return DefWindowProcW(h, m, w, l);

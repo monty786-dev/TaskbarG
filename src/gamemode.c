@@ -6,10 +6,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 
 #define CLASS_NAME L"WinShellGame"
 #define MAX_G 64
 static HWND g_w; static int g_open, g_sel, g_hover = -1, g_nbtn_hot = -1; static double g_pos; static HANDLE g_proc;
+static double g_sh[MAX_G], g_intro, g_bgfade = 1, g_txt = 1; static DWORD g_t0; static char g_bgprev[MAX_PATH * 2]; static int g_slide, g_pulse;
+static double ease(double t) { if (t < 0) t = 0; if (t > 1) t = 1; return 1 - (1 - t) * (1 - t) * (1 - t); }
+static void set_sel(int i);
 static RECT g_cell[MAX_G], g_btn[3]; static HFONT g_f1, g_f2, g_f3; static int g_fh;
 typedef struct { WORD wButtons; BYTE bLT, bRT; SHORT lx, ly, rx, ry; } XPad;
 typedef struct { DWORD packet; XPad pad; } XState;
@@ -49,20 +53,22 @@ static void buttons(HDC dc, int W, int H, COLORREF fill, COLORREF txt, COLORREF 
 }
 static void clock_text(HDC dc, int W, int H, COLORREF c) { struct tm t; clock_tm(&t); wchar_t b[32]; wcsftime(b, 32, L"%I:%M %p", &t); if (b[0] == L'0') memmove(b, b + 1, wcslen(b) * sizeof(wchar_t)); HGDIOBJ o = SelectObject(dc, g_f2); g_text(dc, b, R(W / 2, H / 40, W - W / 30, H / 12), DT_RIGHT | DT_VCENTER | DT_SINGLELINE, c); SelectObject(dc, o); }
 static void background(HDC dc, int W, int H, COLORREF top, COLORREF bot, int dim) {
-    RECT all = R(0, 0, W, H); g_vgrad(dc, all, top, bot, 4); JNode *g = game_at(g_sel); wchar_t bg[MAX_PATH]; w_from_utf8_buf(gs(g, "bg"), bg, MAX_PATH);
-    if (bg[0] && img_fill(dc, bg, W, H, "fill")) g_alpha(dc, all, RGB(0, 0, 0), dim);
+    RECT all = R(0, 0, W, H); g_vgrad(dc, all, top, bot, 4); JNode *g = game_at(g_sel); wchar_t cur[MAX_PATH], prev[MAX_PATH]; w_from_utf8_buf(gs(g, "bg"), cur, MAX_PATH); w_from_utf8_buf(g_bgprev, prev, MAX_PATH); int any = 0;
+    if (g_bgfade < 1 && prev[0]) any |= img_fill_a(dc, prev, W, H, "fill", 100);
+    if (cur[0]) any |= img_fill_a(dc, cur, W, H, "fill", (int)(g_bgfade * 100));
+    if (any) g_alpha(dc, all, RGB(0, 0, 0), dim);
 }
-
+static void set_sel(int i) { if (i == g_sel) return; JNode *g = game_at(g_sel); lstrcpynA(g_bgprev, gs(g, "bg"), (int)sizeof g_bgprev); g_bgfade = 0; g_txt = 0; g_sel = i; }
 /* ------------------------------------------------------------------ themes */
 static void th_ps5(HDC dc, int W, int H) {
     background(dc, W, H, RGB(10, 22, 58), RGB(0, 70, 150), 120); SetBkMode(dc, TRANSPARENT); clock_text(dc, W, H, RGB(255, 255, 255));
     wtext(dc, g_f2, cfg_str("game_title"), R(W / 14, H / 40, W / 2, H / 12), DT_VCENTER | DT_SINGLELINE, RGB(255, 255, 255));
     int S = H * 17 / 100, gap = S / 4, n = ng(), cy = H * 50 / 100;
-    for (int i = 0; i < n; i++) { double d = i - g_pos; int sel = i == g_sel; int s = sel ? S * 13 / 10 : S; int cx = W / 2 + (int)(d * (S + gap)) + (d > 0.4 ? (S * 3 / 10) : (d < -0.4 ? -(S * 3 / 10) : 0)) ; RECT r = R(cx - s / 2, cy - s / 2, cx + s / 2, cy + s / 2); g_cell[i] = r;
-        if (r.right < 0 || r.left > W) continue; if (sel) { RECT o = r; InflateRect(&o, 4, 4); g_alpha(dc, o, RGB(255, 255, 255), 60); }
+    for (int i = 0; i < n; i++) { double d = i - g_pos; int sel = i == g_sel; int s = (int)(S * (1.0 + 0.3 * g_sh[i])); double lt = g_intro * 1.7 - i * 0.07; int dy = (int)((1 - ease(lt)) * H * 0.09); int cx = W / 2 + (int)(d * (S + gap)) + (d > 0.4 ? (S * 3 / 10) : (d < -0.4 ? -(S * 3 / 10) : 0)); RECT r = R(cx - s / 2, cy - s / 2 + dy, cx + s / 2, cy + s / 2 + dy); g_cell[i] = r;
+        if (r.right < 0 || r.left > W) continue; if (sel) { RECT o = r; InflateRect(&o, 6 + g_pulse / 20, 6 + g_pulse / 20); g_alpha(dc, o, RGB(255, 255, 255), 35 + g_pulse / 3); }
         cover(dc, i, r, 0); if (sel) g_frame(dc, r, RGB(255, 255, 255), 3); else g_alpha(dc, r, RGB(0, 0, 0), 70); }
-    JNode *g = game_at(g_sel); if (g) { wtext(dc, g_f1, gs(g, "name"), R(W / 14, H * 70 / 100, W * 7 / 10, H * 79 / 100), DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS, RGB(255, 255, 255));
-        wtext(dc, g_f3, gs(g, "desc"), R(W / 14, H * 79 / 100, W * 6 / 10, H * 93 / 100), DT_WORDBREAK | DT_END_ELLIPSIS, RGB(210, 220, 240)); }
+    JNode *g = game_at(g_sel); if (g) { wtext(dc, g_f1, gs(g, "name"), R(W / 14 + g_slide, H * 70 / 100, W * 7 / 10, H * 79 / 100), DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS, RGB(255, 255, 255));
+        wtext(dc, g_f3, gs(g, "desc"), R(W / 14 + g_slide, H * 79 / 100, W * 6 / 10, H * 93 / 100), DT_WORDBREAK | DT_END_ELLIPSIS, RGB(210, 220, 240)); }
     const wchar_t *l[3] = { L"Play", L"Options", L"Exit" }; buttons(dc, W, H, RGB(255, 255, 255), RGB(0, 0, 0), RGB(255, 255, 255), H / 14, l);
 }
 static void th_steam(HDC dc, int W, int H) {
@@ -72,8 +78,8 @@ static void th_steam(HDC dc, int W, int H) {
     int cwid = W * 11 / 100, chgt = cwid * 3 / 2, gap = W / 90, cols = (W - sb - W / 20) / (cwid + gap); if (cols < 1) cols = 1; int n = ng(), selrow = g_sel / cols, rowh = chgt + gap;
     int roff = selrow * rowh + chgt - H * 68 / 100; if (roff < 0) roff = 0;
     for (int i = 0; i < n; i++) { int col = i % cols, row = i / cols; int x = sb + W / 30 + col * (cwid + gap), y = H * 12 / 100 + row * (chgt + gap) - roff; RECT r = R(x, y, x + cwid, y + chgt); g_cell[i] = r; if (r.bottom < 0 || r.top > H) continue;
-        if (i == g_sel) { InflateRect(&r, 6, 9); } cover(dc, i, r, 0); if (i == g_sel) g_frame(dc, r, RGB(102, 192, 244), 3); }
-    JNode *g = game_at(g_sel); if (g) { g_alpha(dc, R(sb, H * 80 / 100, W, H), RGB(0, 0, 0), 190); wtext(dc, g_f1, gs(g, "name"), R(sb + W / 30, H * 81 / 100, W * 6 / 10, H * 89 / 100), DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS, RGB(255, 255, 255));
+        double lt = g_intro * 1.7 - (i % cols) * 0.07 - (i / cols) * 0.05; OffsetRect(&r, 0, (int)((1 - ease(lt)) * H * 0.07)); InflateRect(&r, (int)(8 * g_sh[i]), (int)(12 * g_sh[i])); cover(dc, i, r, 0); if (i == g_sel) g_frame(dc, r, RGB(102, 192 + g_pulse / 8, 244), 3); }
+    JNode *g = game_at(g_sel); if (g) { g_alpha(dc, R(sb, H * 80 / 100, W, H), RGB(0, 0, 0), 190); wtext(dc, g_f1, gs(g, "name"), R(sb + W / 30 + g_slide, H * 81 / 100, W * 6 / 10, H * 89 / 100), DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS, RGB(255, 255, 255));
         wtext(dc, g_f3, gs(g, "desc"), R(sb + W / 30, H * 89 / 100, W * 6 / 10, H * 99 / 100), DT_WORDBREAK | DT_END_ELLIPSIS, RGB(170, 185, 200)); }
     const wchar_t *l[3] = { L"PLAY", L"OPTIONS", L"EXIT" }; buttons(dc, W, H, RGB(90, 168, 50), RGB(255, 255, 255), RGB(90, 168, 50), H / 80, l);
 }
@@ -82,14 +88,14 @@ static void th_switch(HDC dc, int W, int H) {
     SetBkMode(dc, TRANSPARENT); clock_text(dc, W, H, RGB(60, 60, 60)); pill(dc, R(W / 30, H / 40, W / 30 + H / 12, H / 40 + H / 12), RGB(230, 0, 18), RGB(230, 0, 18), H / 12);
     int S = H * 22 / 100, gap = S / 5, n = ng(), cy = H * 42 / 100; double off = g_pos > 2 ? g_pos - 2 : 0;
     for (int i = 0; i < n; i++) { int x = W / 14 + (int)((i - off) * (S + gap)); RECT r = R(x, cy - S / 2, x + S, cy + S / 2); g_cell[i] = r; if (r.right < 0 || r.left > W) continue; cover(dc, i, r, 0);
-        if (i == g_sel) { RECT o = r; InflateRect(&o, 6, 6); g_frame(dc, o, RGB(230, 0, 18), 5); wtext(dc, g_f3, gs(game_at(i), "name"), R(r.left - 20, r.top - H / 14, r.right + 20, r.top - 6), DT_CENTER | DT_BOTTOM | DT_SINGLELINE | DT_END_ELLIPSIS, RGB(50, 50, 50)); } }
+        if (i == g_sel) { OffsetRect(&r, 0, -(int)(g_sh[i] * H * 0.012 * (1 + g_pulse / 100.0))); g_cell[i] = r; RECT o = r; InflateRect(&o, 6, 6); g_frame(dc, o, RGB(230, 0, 18 + g_pulse / 3), 5); wtext(dc, g_f3, gs(game_at(i), "name"), R(r.left - 20, r.top - H / 14, r.right + 20, r.top - 6), DT_CENTER | DT_BOTTOM | DT_SINGLELINE | DT_END_ELLIPSIS, RGB(50, 50, 50)); } }
     if (gsel) wtext(dc, g_f3, gs(gsel, "desc"), R(W / 14, H * 62 / 100, W * 8 / 10, H * 76 / 100), DT_WORDBREAK | DT_END_ELLIPSIS, RGB(70, 70, 70));
     static const int gl[3] = { G_PLAY_, G_GEAR, G_POWER }; int d = H * 8 / 100, x0 = W / 2 - (int)(d * 3.2);
     for (int i = 0; i < 3; i++) { RECT r = R(x0 + i * (int)(d * 1.7), H * 84 / 100, x0 + i * (int)(d * 1.7) + d, H * 84 / 100 + d); g_btn[i] = r; pill(dc, r, g_nbtn_hot == i ? RGB(255, 255, 255) : RGB(250, 250, 250), RGB(170, 170, 170), d); glyph_draw(gl[i], dc, R(r.left + d / 4, r.top + d / 4, r.right - d / 4, r.bottom - d / 4), RGB(70, 70, 70)); }
 }
 static void th_xbox(HDC dc, int W, int H) {
     background(dc, W, H, RGB(14, 14, 14), RGB(8, 66, 8), 120); SetBkMode(dc, TRANSPARENT); clock_text(dc, W, H, RGB(255, 255, 255)); int n = ng(); JNode *g = game_at(g_sel);
-    RECT hero = R(W / 14, H * 18 / 100, W * 52 / 100, H * 66 / 100); if (n) { cover(dc, g_sel, hero, 0); g_frame(dc, hero, RGB(255, 255, 255), 4); g_cell[g_sel] = hero; }
+    RECT hero = R(W / 14, H * 18 / 100, W * 52 / 100, H * 66 / 100); if (n) { cover(dc, g_sel, hero, 0); g_frame(dc, hero, RGB(255 - g_pulse / 4, 255, 255 - g_pulse / 4), 4); g_cell[g_sel] = hero; }
     int s = H * 15 / 100, gap = s / 6, x = W * 56 / 100, y = H * 18 / 100, col = 0;
     for (int i = 0; i < n; i++) { if (i == g_sel) continue; RECT r = R(x + col * (s + gap), y, x + col * (s + gap) + s, y + s); g_cell[i] = r; cover(dc, i, r, 0); g_alpha(dc, r, RGB(0, 0, 0), 60); if (++col >= 3) { col = 0; y += s + gap; } }
     if (g) { wtext(dc, g_f1, gs(g, "name"), R(W / 14, H * 68 / 100, W * 6 / 10, H * 77 / 100), DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS, RGB(255, 255, 255)); wtext(dc, g_f3, gs(g, "desc"), R(W / 14, H * 77 / 100, W * 6 / 10, H * 93 / 100), DT_WORDBREAK | DT_END_ELLIPSIS, RGB(210, 230, 210)); }
@@ -105,10 +111,13 @@ static void th_retro(HDC dc, int W, int H) {
 }
 
 static void paint(HDC dc, int W, int H) {
-    fonts(H); const char *t = cfg_str("game_theme"); for (int i = 0; i < 3; i++) g_btn[i] = R(0, 0, 0, 0); for (int i = 0; i < MAX_G; i++) g_cell[i] = R(0, 0, 0, 0);
+    fonts(H); g_slide = (int)((1 - ease(g_txt)) * W * 0.035); g_pulse = (int)(50 + 50 * sin((double)(GetTickCount() - g_t0) / 260.0)); const char *t = cfg_str("game_theme"); for (int i = 0; i < 3; i++) g_btn[i] = R(0, 0, 0, 0); for (int i = 0; i < MAX_G; i++) g_cell[i] = R(0, 0, 0, 0);
     HGDIOBJ of = SelectObject(dc, g_f2);
     if (!strcmp(t, "steam")) th_steam(dc, W, H); else if (!strcmp(t, "switch")) th_switch(dc, W, H); else if (!strcmp(t, "xbox")) th_xbox(dc, W, H); else if (!strcmp(t, "retro")) th_retro(dc, W, H); else th_ps5(dc, W, H);
     if (!ng()) { SetBkMode(dc, TRANSPARENT); wtext(dc, g_f1, "No games yet. Press O (Options) and add games in Settings > Game mode.", R(W / 10, H / 3, W * 9 / 10, H * 2 / 3), DT_CENTER | DT_VCENTER | DT_WORDBREAK, RGB(255, 255, 255)); }
+    { SetBkMode(dc, TRANSPARENT); const char *tt = cfg_str("game_theme"); int light = !strcmp(tt, "switch");
+      wtext(dc, g_f3, "Enter / A  Play      O / Y  Options      Esc / B  Exit      Arrows / D-pad  Move", R(W / 14, H - H * 6 / 100, W * 65 / 100, H - H / 100), DT_VCENTER | DT_SINGLELINE, light ? RGB(110, 110, 110) : RGB(170, 180, 195)); }
+    if (g_intro < 1) g_alpha(dc, R(0, 0, W, H), RGB(0, 0, 0), (int)(255 * (1 - ease(g_intro))));
     SelectObject(dc, of);
 }
 
@@ -122,7 +131,7 @@ static void launch(void) {
     if (g_proc) { CloseHandle(g_proc); g_proc = NULL; }
     if (ShellExecuteExW(&sei) && sei.hProcess) g_proc = sei.hProcess; g_open = 0; ShowWindow(g_w, SW_HIDE);
 }
-static void move(int dx) { int n = ng(); if (!n) return; g_sel += dx; if (g_sel < 0) g_sel = 0; if (g_sel >= n) g_sel = n - 1; InvalidateRect(g_w, NULL, FALSE); }
+static void move(int dx) { int n = ng(); if (!n) return; int v = g_sel + dx; if (v < 0) v = 0; if (v >= n) v = n - 1; set_sel(v); InvalidateRect(g_w, NULL, FALSE); }
 static void options(void) { leave(); settings_open_page("Game mode"); }
 static void act_button(int i) { if (i == 0) launch(); else if (i == 1) options(); else leave(); }
 static int cols_steam(int W) { int sb = W * 14 / 100, cwid = W * 11 / 100, gap = W / 90, c = (W - sb - W / 20) / (cwid + gap); return c < 1 ? 1 : c; }
@@ -145,13 +154,16 @@ static LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
         paint(mem, rc.right, rc.bottom); BitBlt(hdc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY); SelectObject(mem, old); DeleteObject(bmp); DeleteDC(mem); EndPaint(h, &ps); return 0; }
     case WM_ERASEBKGND: return 1;
     case WM_TIMER: { poll_pad(); if (g_proc && WaitForSingleObject(g_proc, 0) == WAIT_OBJECT_0) { CloseHandle(g_proc); g_proc = NULL; if (cfg_bool("game_return")) game_open(); }
-        if (g_open) { double d = g_sel - g_pos; if (d > 0.01 || d < -0.01) { g_pos += d * 0.22; InvalidateRect(h, NULL, FALSE); } else if (g_pos != g_sel) { g_pos = g_sel; InvalidateRect(h, NULL, FALSE); }
-            if (GetForegroundWindow() != h) SetForegroundWindow(h); } return 0; }
+        if (g_open) { int dirty = 0; DWORD el = GetTickCount() - g_t0; if (g_intro < 1) { g_intro = el / 650.0; if (g_intro > 1) g_intro = 1; dirty = 1; }
+            if (g_bgfade < 1) { g_bgfade += 0.08; if (g_bgfade > 1) g_bgfade = 1; dirty = 1; } if (g_txt < 1) { g_txt += 0.10; if (g_txt > 1) g_txt = 1; dirty = 1; }
+            for (int i = 0; i < MAX_G; i++) { double tg = i == g_sel ? 1.0 : 0.0, d = tg - g_sh[i]; if (d > 0.005 || d < -0.005) { g_sh[i] += d * 0.25; dirty = 1; } }
+            double d = g_sel - g_pos; if (d > 0.01 || d < -0.01) { g_pos += d * 0.22; dirty = 1; } else if (g_pos != g_sel) { g_pos = g_sel; dirty = 1; }
+            if (el % 2 == 0 || dirty) dirty = 1; if (dirty) InvalidateRect(h, NULL, FALSE); if (GetForegroundWindow() != h) SetForegroundWindow(h); } return 0; }
     case WM_KEYDOWN: key(w); return 0;
     case WM_MOUSEMOVE: { int x = (short)LOWORD(l), y = (short)HIWORD(l), hb = -1; for (int i = 0; i < 3; i++) if (in_rect(&g_btn[i], x, y)) hb = i; if (hb != g_nbtn_hot) { g_nbtn_hot = hb; InvalidateRect(h, NULL, FALSE); } return 0; }
     case WM_MOUSEWHEEL: move(-(short)HIWORD(w) / WHEEL_DELTA); return 0;
     case WM_LBUTTONUP: { int x = (short)LOWORD(l), y = (short)HIWORD(l); for (int i = 0; i < 3; i++) if (in_rect(&g_btn[i], x, y)) { act_button(i); return 0; }
-        for (int i = ng() - 1; i >= 0; i--) if (in_rect(&g_cell[i], x, y)) { if (i == g_sel) launch(); else { g_sel = i; InvalidateRect(h, NULL, FALSE); } return 0; } return 0; }
+        for (int i = ng() - 1; i >= 0; i--) if (in_rect(&g_cell[i], x, y)) { if (i == g_sel) launch(); else { set_sel(i); InvalidateRect(h, NULL, FALSE); } return 0; } return 0; }
     case WM_RBUTTONUP: leave(); return 0;
     }
     return DefWindowProcW(h, m, w, l);
@@ -159,8 +171,8 @@ static LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
 
 void game_open(void) {
     if (!g_w) { WNDCLASSW wc; memset(&wc, 0, sizeof wc); wc.lpfnWndProc = proc; wc.hInstance = GetModuleHandleW(NULL); wc.hCursor = LoadCursorW(NULL, IDC_ARROW); wc.hIcon = LoadIconW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(100)); wc.lpszClassName = CLASS_NAME; RegisterClassW(&wc);
-        int sw, sh; screen_size(&sw, &sh); g_w = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, CLASS_NAME, L"WinShell Game Mode", WS_POPUP, 0, 0, sw, sh, NULL, NULL, wc.hInstance, NULL); if (!g_w) return; SetTimer(g_w, 1, 16, NULL); }
-    int sw, sh; screen_size(&sw, &sh); if (g_sel >= ng()) g_sel = 0; g_pos = g_sel; g_open = 1; start_close(); preview_close();
+        int sw, sh; screen_size(&sw, &sh); g_w = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, CLASS_NAME, L"WinShell Game Mode", WS_POPUP, 0, 0, sw, sh, NULL, NULL, wc.hInstance, NULL); if (!g_w) return; SetTimer(g_w, 1, 30, NULL); }
+    int sw, sh; screen_size(&sw, &sh); if (g_sel >= ng()) g_sel = 0; g_pos = g_sel; g_open = 1; g_t0 = GetTickCount(); g_intro = 0; g_bgfade = 1; g_txt = 0; g_bgprev[0] = 0; for (int i = 0; i < MAX_G; i++) g_sh[i] = i == g_sel ? 1.0 : 0.0; start_close(); preview_close();
     SetWindowPos(g_w, HWND_TOPMOST, 0, 0, sw, sh, 0); ShowWindow(g_w, SW_SHOW); SetForegroundWindow(g_w); SetFocus(g_w); InvalidateRect(g_w, NULL, FALSE);
 }
 void game_close(void) { g_open = 0; if (g_w) ShowWindow(g_w, SW_HIDE); }

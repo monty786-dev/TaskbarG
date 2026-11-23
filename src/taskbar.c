@@ -16,7 +16,7 @@ typedef struct { HWND h; wchar_t exe[MAX_PATH]; wchar_t key[MAX_PATH]; } WinInfo
 static WinInfo g_wins[MAX_WINS]; static int g_nwins;
 static struct { HWND h; wchar_t exe[MAX_PATH]; } g_wexe[MAX_WINS]; static int g_nwexe;
 
-enum { H_NONE, H_START, H_SEARCH, H_DESK, H_CLOSEALL, H_TRAY, H_CLOCK, H_BAR, H_ENTRY };
+enum { H_NONE, H_START, H_SEARCH, H_DESK, H_CLOSEALL, H_TRAY, H_CLOCK, H_BAR, H_ENTRY, H_MODE };
 
 static int  g_hover = H_NONE; static wchar_t g_hover_key[MAX_PATH];
 static int  g_tracking;
@@ -231,12 +231,13 @@ static void do_layout(int W, int H, Layout *L) {
     if (cfg_bool("search_box") && el_show(E_SEARCH)) { a[E_SEARCH] = vert ? T : px(cfg_int("search_w")); c[E_SEARCH] = T; }
     if (el_show(E_DESK)) { a[E_DESK] = px(cfg_int("desk_w")); c[E_DESK] = T; }
     if (cfg_bool("show_preview_button") && el_show(E_PREVIEW)) { a[E_PREVIEW] = vert ? (int)(T * 0.8) : px(34); c[E_PREVIEW] = T; }
+    if (el_show(E_MODE)) { a[E_MODE] = vert ? (int)(T * 0.8) : px(34); c[E_MODE] = T; }
     if (el_show(E_CLOCK)) { a[E_CLOCK] = vert ? clock_lines() * px(cfg_int("font_size") + 3) + px(10) : px(cfg_int("clock_w")); c[E_CLOCK] = T; }
     if (cfg_bool("tray_icons") && el_show(E_TRAY) && tray_width() > 0) { a[E_TRAY] = tray_width(); c[E_TRAY] = T; }
     /* system group, packed from the far end */
-    static const int sys[] = { E_DESK, E_PREVIEW, E_CLOCK, E_TRAY };
+    static const int sys[] = { E_DESK, E_PREVIEW, E_MODE, E_CLOCK, E_TRAY };
     int q = 0;
-    for (int k = 0; k < 4; k++) { int e = sys[k]; if (!a[e]) continue; int u1 = rev ? q : Lg - q - a[e]; L->r[e] = R(u1, (T - c[e]) / 2, u1 + a[e], (T - c[e]) / 2 + c[e]); q += a[e]; }
+    for (int k = 0; k < 5; k++) { int e = sys[k]; if (!a[e]) continue; int u1 = rev ? q : Lg - q - a[e]; L->r[e] = R(u1, (T - c[e]) / 2, u1 + a[e], (T - c[e]) / 2 + c[e]); q += a[e]; }
     int sys_total = q;
     /* main group: start, search, apps */
     Place ap; el_get_place(E_APPS, &ap); int icon_w = vert ? T : (int)(T * 1.15); if (!ap.autosize && ap.w > 0) icon_w = px(ap.w);
@@ -251,7 +252,7 @@ static void do_layout(int W, int H, Layout *L) {
     for (int k = 0; k < 2; k++) { int e = mainel[k]; if (!a[e]) continue; int u1 = rev ? Lg - p - a[e] : p; L->r[e] = R(u1, (T - c[e]) / 2, u1 + a[e], (T - c[e]) / 2 + c[e]); p += a[e]; }
     for (i = 0; i < n; i++) { int u1 = rev ? Lg - p - widths[i] : p; L->ent[i] = R(u1, 0, u1 + widths[i], T); p += widths[i]; }
     /* user drag offsets (relative, so they adapt to bar size) then axes swap */
-    for (int e = E_START; e <= E_TRAY; e++) {
+    for (int e = E_START; e <= E_MODE; e++) {
         if (!a[e]) continue; RECT r = el_apply(e, L->r[e]);
         L->r[e] = to_client(vert, r.left, r.top, r.right, r.bottom);
     }
@@ -261,17 +262,19 @@ static void do_layout(int W, int H, Layout *L) {
 
 static int hit(int x, int y, int *idx) {
     int W, H; client(&W, &H); Layout L; do_layout(W, H, &L); *idx = -1;
-    static const struct { int e, kind; } order[] = { { E_START, H_START }, { E_SEARCH, H_SEARCH }, { E_DESK, H_DESK }, { E_PREVIEW, H_CLOSEALL }, { E_TRAY, H_TRAY }, { E_CLOCK, H_CLOCK } };
-    for (int k = 0; k < 6; k++) if (L.r[order[k].e].right > L.r[order[k].e].left && in_rect(&L.r[order[k].e], x, y)) return order[k].kind;
+    static const struct { int e, kind; } order[] = { { E_START, H_START }, { E_SEARCH, H_SEARCH }, { E_DESK, H_DESK }, { E_PREVIEW, H_CLOSEALL }, { E_MODE, H_MODE }, { E_TRAY, H_TRAY }, { E_CLOCK, H_CLOCK } };
+    for (int k = 0; k < 7; k++) if (L.r[order[k].e].right > L.r[order[k].e].left && in_rect(&L.r[order[k].e], x, y)) return order[k].kind;
     if (el_show(E_APPS)) for (int i = 0; i < g_nent; i++) if (in_rect(&L.ent[i], x, y)) { *idx = i; return H_ENTRY; }
     return H_BAR;
 }
 static int kind_element(int kind) {
     switch (kind) { case H_START: return E_START; case H_SEARCH: return E_SEARCH; case H_DESK: return E_DESK; case H_CLOSEALL: return E_PREVIEW;
-        case H_TRAY: return E_TRAY; case H_CLOCK: return E_CLOCK; case H_ENTRY: return E_APPS; default: return -1; }
+        case H_TRAY: return E_TRAY; case H_MODE: return E_MODE; case H_CLOCK: return E_CLOCK; case H_ENTRY: return E_APPS; default: return -1; }
 }
 static int apps_icon_px(void) { Place p; el_get_place(E_APPS, &p); return (!p.autosize && p.h > 0) ? px(p.h) : px(cfg_int("icon_size")); }
 static COLORREF ta(const Theme *th, COLORREF c) { return g_mixa(th->bg, c, cfg_int("bar_text_alpha")); }
+static void pill_shape(HDC dc, RECT r, COLORREF f) { HBRUSH b = CreateSolidBrush(f); HPEN p = CreatePen(PS_SOLID, 1, f); HGDIOBJ ob = SelectObject(dc, b), op = SelectObject(dc, p); int h = r.bottom - r.top; RoundRect(dc, r.left, r.top, r.right, r.bottom, h, h); SelectObject(dc, ob); SelectObject(dc, op); DeleteObject(b); DeleteObject(p); }
+static COLORREF pill_text(COLORREF f) { return c_luminance(f) > 150 ? RGB(20, 20, 20) : RGB(255, 255, 255); }
 static COLORREF ia(const Theme *th, COLORREF c) { return g_mixa(th->bg, c, cfg_int("bar_icon_alpha")); }
 int bar_start_left(void) { int W, H; client(&W, &H); Layout L; do_layout(W, H, &L); RECT b = bar_rect(); return b.left + L.r[E_START].left; }
 int bar_start_right(void) { int W, H; client(&W, &H); Layout L; do_layout(W, H, &L); RECT b = bar_rect(); return b.left + L.r[E_START].right; }
@@ -330,9 +333,9 @@ static void draw_search(HDC dc, RECT r, const Theme *th, int hot) {
     int vert = bar_vertical(); COLORREF ic = el_color(E_SEARCH, th->dim); (void)ic;
     if (vert) { if (hot) hl(dc, r, th, 0); int s = (r.right - r.left) * 6 / 10; el_draw(dc, E_SEARCH, R((r.left + r.right) / 2 - s / 2, (r.top + r.bottom) / 2 - s / 2, (r.left + r.right) / 2 + s / 2, (r.top + r.bottom) / 2 + s / 2), ia(th, th->text), G_SEARCH); return; }
     int pad = px(6); RECT b = R(r.left + px(2), r.top + pad, r.right - px(2), r.bottom - pad);
-    if (cfg_bool("glass")) g_alpha(dc, b, th->input, 215); else g_fill(dc, b, th->input);
+    if (cfg_bool("ui_pills")) pill_shape(dc, b, pill_color(L"search")); else if (cfg_bool("glass")) g_alpha(dc, b, th->input, 215); else g_fill(dc, b, th->input);
     int active = g_start_visible && cfg_bool("start_search_in_bar");
-    g_frame(dc, b, (hot || active) ? th->accent : th->active, 1);
+    if (!cfg_bool("ui_pills")) g_frame(dc, b, (hot || active) ? th->accent : th->active, 1);
     int s = b.bottom - b.top - px(12); if (s < 8) s = 8;
     el_draw(dc, E_SEARCH, R(b.left + px(8), (b.top + b.bottom) / 2 - s / 2, b.left + px(8) + s, (b.top + b.bottom) / 2 + s / 2), ia(th, th->dim), G_SEARCH);
     const wchar_t *q = start_query(); wchar_t ph[100]; w_from_utf8_buf(cfg_str("search_text"), ph, 100);
@@ -351,8 +354,8 @@ static void draw_icon_shaped(HDC dc, const Entry *e, int x, int y, int size, con
     if (rgn) {
         COLORREF bc = cfg_str("icon_border_color")[0] ? c_hex(cfg_str("icon_border_color"), th->accent) : th->accent;
         if (cfg_bool("icon_border")) g_frame(dc, rr, bc, px(cfg_int("icon_border_width")));
-        SelectClipRgn(dc, rgn); g_icon_a(dc, e->hicon, x, y, size, cfg_int("bar_icon_alpha")); SelectClipRgn(dc, NULL); DeleteObject(rgn);
-    } else g_icon_a(dc, e->hicon, x, y, size, cfg_int("bar_icon_alpha"));
+        SelectClipRgn(dc, rgn); if (cfg_str("icon_fill_color")[0]) g_fill(dc, rr, c_hex(cfg_str("icon_fill_color"), th->accent)); g_icon_name(dc, e->hicon, e->title[0] ? e->title : e->key, x, y, size, cfg_int("bar_icon_alpha")); SelectClipRgn(dc, NULL); DeleteObject(rgn);
+    } else g_icon_name(dc, e->hicon, e->title[0] ? e->title : e->key, x, y, size, cfg_int("bar_icon_alpha"));
 }
 
 static void draw_entry(HDC dc, Entry *e, RECT r, int isz, const Theme *th, int lifted) {
@@ -364,7 +367,8 @@ static void draw_entry(HDC dc, Entry *e, RECT r, int isz, const Theme *th, int l
     int show_text = !vert && cfg_bool("show_titles") && e->ntasks && bw > isz + px(40);
     int ix = r.left + (show_text ? px(10) : (bw - isz) / 2), iy = r.top + (bh - isz) / 2;
     draw_icon_shaped(dc, e, ix, iy, isz, th);
-    if (show_text) g_text(dc, e->title, R(ix + isz + px(8), r.top, r.right - px(6), r.bottom), DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, ta(th, th->text));
+    if (show_text && cfg_bool("ui_pills")) { SIZE sz = { 0, 0 }; GetTextExtentPoint32W(dc, e->title, lstrlenW(e->title), &sz); int tw = sz.cx > r.right - (ix + isz + px(8)) - px(12) ? r.right - (ix + isz + px(8)) - px(12) : sz.cx; COLORREF f = pill_color(e->title); pill_shape(dc, R(ix + isz + px(4), r.top + (bh - px(22)) / 2, ix + isz + px(14) + tw + px(8), r.top + (bh + px(22)) / 2), f); g_text(dc, e->title, R(ix + isz + px(10), r.top, r.right - px(6), r.bottom), DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, pill_text(f)); }
+    else if (show_text) g_text(dc, e->title, R(ix + isz + px(8), r.top, r.right - px(6), r.bottom), DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX, ta(th, th->text));
     if (!e->ntasks) return;
     if (!e->has_accent) { e->accent = cfg_bool("icon_accent") ? icon_accent(e->hicon, th->accent) : th->accent; e->has_accent = 1; }
     int thick = px(active ? 3 : 2);
@@ -379,6 +383,7 @@ static void draw_clock(HDC dc, RECT r, const Theme *th) {
     if (!bar_vertical()) {
         RECT calc = r; DrawTextW(dc, g_clock_text, -1, &calc, DT_CALCRECT | DT_CENTER | DT_NOPREFIX);
         int th_ = calc.bottom - calc.top, top = r.top + ((r.bottom - r.top - th_) / 2 > 0 ? (r.bottom - r.top - th_) / 2 : 0);
+        if (cfg_bool("ui_pills")) { int tw = calc.right - calc.left, cx = (r.left + r.right) / 2; COLORREF f = pill_color(L"clock"); pill_shape(dc, R(cx - tw / 2 - px(10), top - px(4), cx + tw / 2 + px(10), top + th_ + px(4)), f); g_text(dc, g_clock_text, R(r.left, top, r.right, top + th_), DT_CENTER | DT_NOPREFIX, pill_text(f)); return; }
         g_text(dc, g_clock_text, R(r.left, top, r.right, top + th_), DT_CENTER | DT_NOPREFIX, ta(th, th->text));
         return;
     }
@@ -409,14 +414,16 @@ static void draw(HDC dc, int W, int H) {
     if (L.r[E_CLOCK].right > L.r[E_CLOCK].left) draw_clock(dc, L.r[E_CLOCK], &th);
     if (L.r[E_PREVIEW].right > L.r[E_PREVIEW].left) { RECT r = L.r[E_PREVIEW]; if (g_hover == H_CLOSEALL) hl(dc, r, &th, 0); int s = (r.right - r.left < r.bottom - r.top ? r.right - r.left : r.bottom - r.top) * 55 / 100;
         el_draw(dc, E_PREVIEW, R((r.left + r.right) / 2 - s / 2, (r.top + r.bottom) / 2 - s / 2, (r.left + r.right) / 2 + s / 2, (r.top + r.bottom) / 2 + s / 2), ia(&th, th.text), G_PREVIEW); }
+    if (L.r[E_MODE].right > L.r[E_MODE].left) { RECT r = L.r[E_MODE]; int on = cfg_bool("full_desktop"); if (g_hover == H_MODE || on) hl(dc, r, &th, on ? 1 : 0); int s = (r.right - r.left < r.bottom - r.top ? r.right - r.left : r.bottom - r.top) * 55 / 100;
+        el_draw(dc, E_MODE, R((r.left + r.right) / 2 - s / 2, (r.top + r.bottom) / 2 - s / 2, (r.left + r.right) / 2 + s / 2, (r.top + r.bottom) / 2 + s / 2), ia(&th, on ? th.accent : th.text), G_DESK); }
     if (L.r[E_TRAY].right > L.r[E_TRAY].left) tray_draw(dc, L.r[E_TRAY], vert);
     if (L.r[E_DESK].right > L.r[E_DESK].left) { RECT r = L.r[E_DESK]; if (g_hover == H_DESK) hl(dc, r, &th, 0);
         if (vert) g_fill(dc, R(4, r.top, W - 4, r.top + 1), th.active); else g_fill(dc, R(r.left, 4, r.left + 1, H - 4), th.active); }
     if (g_edit_layout == 1) {
-        for (int e = E_START; e <= E_TRAY; e++) if (L.r[e].right > L.r[e].left) { g_alpha(dc, L.r[e], th.accent, 40); g_frame(dc, L.r[e], th.accent, 1); }
+        for (int e = E_START; e <= E_MODE; e++) if (L.r[e].right > L.r[e].left) { g_alpha(dc, L.r[e], th.accent, 40); g_frame(dc, L.r[e], th.accent, 1); }
         if (n) { RECT u = L.ent[0]; for (int i = 1; i < n; i++) { if (L.ent[i].left < u.left) u.left = L.ent[i].left; if (L.ent[i].top < u.top) u.top = L.ent[i].top; if (L.ent[i].right > u.right) u.right = L.ent[i].right; if (L.ent[i].bottom > u.bottom) u.bottom = L.ent[i].bottom; }
             g_alpha(dc, u, th.accent, 25); g_frame(dc, u, th.accent, 1); }
-        for (int e = E_START; e <= E_TRAY; e++) if (L.r[e].right > L.r[e].left) g_fill(dc, R(L.r[e].right - px(8), L.r[e].bottom - px(8), L.r[e].right, L.r[e].bottom), th.accent);
+        for (int e = E_START; e <= E_MODE; e++) if (L.r[e].right > L.r[e].left) g_fill(dc, R(L.r[e].right - px(8), L.r[e].bottom - px(8), L.r[e].right, L.r[e].bottom), th.accent);
     }
     SelectObject(dc, old_font);
 }
@@ -512,12 +519,12 @@ void bar_close_all_windows(void) {
 }
 
 static void bar_menu(void) {
-    const wchar_t *lab[] = { L"Show desktop", L"Close all windows", L"Game mode", NULL, L"Taskbar settings", L"Edit layout (drag elements)", L"Settings", L"Reload settings", NULL, L"Exit taskbar" };
+    const wchar_t *lab[] = { L"Show desktop", L"Close all windows", L"Game mode", NULL, L"Taskbar settings", L"Layout editor...", L"Settings", L"Reload settings", NULL, L"Exit taskbar" };
     int id[] = { 1, 2, 8, -1, 3, 4, 5, 6, -1, 7 }, fl[] = { 0, 0, 0, 0, 0, g_edit_layout == 1 ? MF_CHECKED : 0, 0, 0, 0, 0 };
     int cmd = popup(lab, id, fl, 10);
     if (cmd == 8) { game_open(); return; }
     if (cmd == 1) bar_show_desktop(); else if (cmd == 2) bar_close_all_windows();
-    else if (cmd == 3) settings_open_page("Taskbar"); else if (cmd == 4) { g_edit_layout = g_edit_layout == 1 ? 0 : 1; bar_invalidate(); }
+    else if (cmd == 3) settings_open_page("Taskbar"); else if (cmd == 4) editor_open(0);
     else if (cmd == 5) settings_open(-1); else if (cmd == 6) app_reload(); else if (cmd == 7) PostMessageW(g_bar_hwnd, WM_CLOSE, 0, 0);
 }
 
@@ -567,6 +574,8 @@ static void finish_drag(void) {
 static void force_front(int hard) {
     if (!g_bar_hwnd || g_bar_hidden) return;
     UINT f = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
+    HWND fly = g_start_visible ? start_hwnd() : (preview_visible() ? preview_hwnd() : NULL);        /* never cover the Start panel / preview */
+    if (fly && IsWindow(fly)) { SetWindowPos(g_bar_hwnd, fly, 0, 0, 0, 0, f); return; }
     if (hard) SetWindowPos(g_bar_hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, f);
     SetWindowPos(g_bar_hwnd, HWND_TOPMOST, 0, 0, 0, 0, f);
 }
@@ -618,7 +627,7 @@ int bar_fg_excluded(void) {
 
 static void check_hide(void) {
     HWND fg; int zoomed = fg_info(&fg); DWORD now = GetTickCount();
-    int hide = cfg_bool("bar_autohide") || (cfg_bool("strip_maximized") && zoomed);
+    int strip = cfg_bool("strip_enabled"); int hide = strip && (cfg_bool("bar_autohide") || (cfg_bool("strip_maximized") && zoomed));   /* auto-hide only works together with the reveal bar */
     if (hide && (int)(g_reveal_until - now) > 0) {
         hide = 0; if (g_menu_depth > 0 || g_start_visible || cursor_in_bar(6) || g_edit_layout) g_reveal_until = now + (DWORD)g_reveal_len * 1000;
     }
@@ -628,11 +637,27 @@ static void check_hide(void) {
     reveal_show(g_bar_hidden && cfg_bool("strip_enabled") && !bar_fg_excluded() && !gaming);
 }
 
+/* Polls for newly visible program windows: the shell hook is unreliable under Wine / Winlator. */
+static HWND g_seen[256]; static DWORD g_seen_t[256]; static RECT g_seen_r[256]; static int g_nseen, g_seen_init;
+static BOOL CALLBACK scan_cb(HWND h, LPARAM lp) {
+    (void)lp; if (!IsWindowVisible(h) || !is_task_window(h)) return TRUE; wchar_t cls[64]; GetClassNameW(h, cls, 64); if (!wcsncmp(cls, L"WinShell", 8)) return TRUE;
+    int i; for (i = 0; i < g_nseen; i++) if (g_seen[i] == h) break;
+    RECT r; GetWindowRect(h, &r); DWORD now = GetTickCount();
+    if (i < g_nseen) { if (g_seen_t[i] && now - g_seen_t[i] >= 120 && EqualRect(&r, &g_seen_r[i])) { g_seen_t[i] = 0; anim_window(h, 0); } else if (g_seen_t[i]) g_seen_r[i] = r; return TRUE; }
+    if (g_nseen < 256) { g_seen[g_nseen] = h; g_seen_r[g_nseen] = r; g_seen_t[g_nseen++] = g_seen_init ? now : 0; }          /* windows that existed before start-up are not animated */
+    return TRUE;
+}
+static void scan_new_windows(void) {
+    EnumWindows(scan_cb, 0); g_seen_init = 1;
+    for (int i = 0; i < g_nseen; ) if (!IsWindow(g_seen[i])) { g_seen[i] = g_seen[--g_nseen]; g_seen_t[i] = g_seen_t[g_nseen]; g_seen_r[i] = g_seen_r[g_nseen]; } else i++;
+}
+
 static void fast_tick(void) {
     g_fast++;
     if (!g_bar_hwnd) return;
     if (g_fast % 4 == 0 && tray_refresh()) bar_invalidate();
     DWORD now = GetTickCount();
+    if (g_fast % 2 == 0 && cfg_bool("animations") && cfg_bool("anim_app_on")) scan_new_windows();
     for (int i = 0; i < g_npending; ) {                      /* animate newly opened program windows */
         HWND h = g_pending[i]; int drop = !IsWindow(h) || now - g_pending_t[i] > 3000;
         if (!drop && IsWindowVisible(h) && is_task_window(h)) { wchar_t cls[64]; GetClassNameW(h, cls, 64); if (wcsncmp(cls, L"WinShell", 8)) anim_window(h, 0); drop = 1; }
@@ -671,7 +696,7 @@ static void on_move(int x, int y, int kind, int idx) {
         if (i >= 0) { g_drag_dx = along - (vert ? L.ent[i].top : L.ent[i].left); g_drag = 1; lstrcpyW(g_drag_key, g_press_key); }
     }
     if (g_drag) { g_drag_x = along; reorder_drag(along); bar_invalidate(); return; }
-    int nk = (kind == H_ENTRY || kind == H_START || kind == H_SEARCH || kind == H_DESK || kind == H_CLOSEALL) ? kind : H_NONE;
+    int nk = (kind == H_ENTRY || kind == H_START || kind == H_SEARCH || kind == H_DESK || kind == H_CLOSEALL || kind == H_MODE) ? kind : H_NONE;
     wchar_t nkey[MAX_PATH]; nkey[0] = 0; if (nk == H_ENTRY && idx >= 0) lstrcpyW(nkey, g_entries[idx].key);
     if (!g_tracking) { TRACKMOUSEEVENT t = { sizeof t, TME_LEAVE, g_bar_hwnd, 0 }; TrackMouseEvent(&t); g_tracking = 1; }
     if (nk != g_hover || wcscmp(nkey, g_hover_key)) { g_hover = nk; lstrcpyW(g_hover_key, nkey); bar_invalidate(); }
@@ -686,6 +711,7 @@ static void on_left_up(int kind, int idx) {
         return;
     }
     if (kind == H_CLOCK) { settings_open_page("Clock and buttons"); return; }
+    if (kind == H_MODE) { app_toggle_desktop(); return; }
     if (kind == H_START) start_toggle(); else if (kind == H_SEARCH) start_open_search();
     else if (kind == H_DESK) bar_show_desktop(); else if (kind == H_CLOSEALL) preview_toggle();
 }
@@ -711,7 +737,7 @@ static LRESULT CALLBACK bar_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         else if (g_edit_layout == 1 && (msg == WM_LBUTTONDOWN || msg == WM_RBUTTONUP)) {
             int e = kind_element(kind);
             int W, H; client(&W, &H); Layout L; do_layout(W, H, &L); int grip = -1;
-            if (msg == WM_LBUTTONDOWN) for (int k = E_START; k <= E_TRAY; k++) if (L.r[k].right > L.r[k].left && x >= L.r[k].right - px(12) && y >= L.r[k].bottom - px(12) && x <= L.r[k].right && y <= L.r[k].bottom) grip = k;
+            if (msg == WM_LBUTTONDOWN) for (int k = E_START; k <= E_MODE; k++) if (L.r[k].right > L.r[k].left && x >= L.r[k].right - px(12) && y >= L.r[k].bottom - px(12) && x <= L.r[k].right && y <= L.r[k].bottom) grip = k;
             if (msg == WM_LBUTTONDOWN && grip >= 0) { g_ed_el = grip; g_ed_mode = 2; g_ed_sx = x; g_ed_sy = y; el_get_place(grip, &g_ed_p); g_ed_r = L.r[grip]; SetCapture(hwnd); }
             else if (msg == WM_LBUTTONDOWN && e >= 0) { g_ed_el = e; g_ed_mode = 1; g_ed_sx = x; g_ed_sy = y; el_get_place(e, &g_ed_p); g_ed_r = e == E_APPS && g_nent ? L.ent[0] : L.r[e]; SetCapture(hwnd); }
             else if (msg == WM_RBUTTONUP) { if (e >= 0) edit_menu(e); else bar_menu(); }
@@ -765,4 +791,14 @@ int bar_create(void) {
 RECT bar_start_screen_rect(void) {
     int W, H; client(&W, &H); Layout L; do_layout(W, H, &L); RECT b = bar_rect(), s = L.r[E_START];
     OffsetRect(&s, b.left, b.top); return s;
+}
+
+/* ---- used by the layout editor window ---- */
+void bar_render(HDC dc, int W, int H) { draw(dc, W, H); }
+int bar_element_rects(int *ids, RECT *rc, int max, int *W, int *H) {
+    RECT b = bar_rect(); *W = b.right - b.left; *H = b.bottom - b.top; Layout L; do_layout(*W, *H, &L); int n = 0;
+    for (int e = E_START; e <= E_MODE && n < max; e++) if (L.r[e].right > L.r[e].left) { ids[n] = e; rc[n++] = L.r[e]; }
+    int na = el_show(E_APPS) ? g_nent : 0;
+    if (na && n < max) { RECT u = L.ent[0]; for (int i = 1; i < na; i++) { if (L.ent[i].left < u.left) u.left = L.ent[i].left; if (L.ent[i].top < u.top) u.top = L.ent[i].top; if (L.ent[i].right > u.right) u.right = L.ent[i].right; if (L.ent[i].bottom > u.bottom) u.bottom = L.ent[i].bottom; } ids[n] = E_APPS; rc[n++] = u; }
+    return n;
 }

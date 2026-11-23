@@ -96,9 +96,9 @@ void glyph_draw(int g, HDC dc, RECT r, COLORREF c);
 int  img_draw(HDC dc, const wchar_t *path, RECT r, COLORREF tint, int use_tint);
 void img_clear(void);
 
-enum { E_START, E_SEARCH, E_DESK, E_PREVIEW, E_CLOCK, E_TRAY, E_APPS,
+enum { E_START, E_SEARCH, E_DESK, E_PREVIEW, E_CLOCK, E_TRAY, E_MODE, E_APPS,
        E_SM_USER, E_SM_ADD, E_SM_SEARCH, E_SM_POWER, E_SM_SETTINGS, E_SM_RUN, E_SM_PROGRAMS, E_SM_SYSTEM,
-       E_SM_COLLAPSE, E_SM_SWITCH, E_SM_TILES, E_SM_LIST, E_SM_PANE, E_COUNT };
+       E_SM_COLLAPSE, E_SM_SWITCH, E_SM_TILES, E_SM_LIST, E_SM_PANE, E_SM_MODE, E_COUNT };
 const char *el_id(int e);
 const char *el_label(int e);
 int      el_show(int e);
@@ -118,8 +118,30 @@ void     el_set_place(int e, const Place *p);
 RECT     el_apply(int e, RECT autor);          /* automatic rectangle -> final rectangle (offset / absolute / resized) */
 void     el_auto_all(void);                    /* everything back to automatic position, size and visibility */
 void     g_icon_a(HDC dc, HICON ic, int x, int y, int size, int alpha_pct);
+int      icon_is_generic(HICON ic);
+void     g_icon_name(HDC dc, HICON ic, const wchar_t *name, int x, int y, int size, int alpha_pct);   /* icon, or a colour-filled first-letter badge */
+void     g_badge(HDC dc, const wchar_t *name, RECT r, COLORREF fill);
+COLORREF pill_color(const wchar_t *text);
+RECT     g_pill(HDC dc, RECT slot, const wchar_t *text, int align, int active);   /* text-sized colour-filled shape; returns drawn rect */
+HICON    img_to_icon(const wchar_t *path, int size);
+int      img_cover(HDC dc, const wchar_t *path, RECT r, int alpha_pct);
+void     app_backup_save(HWND owner);
+void     app_backup_restore(HWND owner);
+void     app_toggle_desktop(void);
+void     shuffle_os(int everything);
+void     editor_open(int tab);
+HWND     editor_hwnd(void);
+void     editor_destroy(void);
+int      preview_visible(void);
+HWND     preview_hwnd(void);
+void     bar_render(HDC dc, int W, int H);
+int      bar_element_rects(int *ids, RECT *rc, int max, int *W, int *H);
+void     start_render(HDC dc, int W, int H);
+int      start_element_rects(int *ids, RECT *rc, int max, int *W, int *H);
 COLORREF g_mixa(COLORREF bg, COLORREF fg, int alpha_pct);
 int      img_fill(HDC dc, const wchar_t *path, int W, int H, const char *mode);   /* wallpaper */
+int      img_fill_a(HDC dc, const wchar_t *path, int W, int H, const char *mode, int alpha_pct);
+JNode   *fake_app(const wchar_t *path);
 
 /* ---------------------------------------------------------- wine colours */
 int  sys_preset_count(void);
@@ -247,6 +269,7 @@ void desktop_sync(void);
 void desktop_destroy(void);
 void desktop_add_shortcut(const wchar_t *path, const char *type);
 void desktop_add_widget(const char *kind);
+void desktop_add_image(const wchar_t *img, const wchar_t *target);
 void desktop_arrange(void);
 void desktop_clear(void);
 void game_open(void);

@@ -25,7 +25,7 @@ static const Def DEFAULTS[] = {
     B("glass_blur",1), B("glass_blur_bar",1), B("glass_blur_start",1), B("glass_blur_title",1),
     S("glass_preset","custom"), B("round_corners",0), I("corner_radius",12),
     S("font","Segoe UI"), I("font_size",14), F("scale",1.0),
-    S("icon_shape","none"), B("icon_border",0), I("icon_border_width",1), S("icon_border_color",""),
+    S("icon_shape","none"), S("icon_fill_color",""), B("icon_letter",1), B("ui_pills",0), I("pill_seed",1), B("icon_border",0), I("icon_border_width",1), S("icon_border_color",""),
     /* ---- taskbar ---- */
     S("position","bottom"), S("alignment","left"), I("height",40), I("icon_size",24),
     I("button_width",170), B("show_titles",0), B("icon_accent",1),
@@ -36,7 +36,7 @@ static const Def DEFAULTS[] = {
     B("search_box",0), I("search_w",220), S("search_text","Type here to search"),
     S("start_style","ninebox"), I("start_btn_w",0), I("start_btn_h",0), I("start_icon_scale",100),
     I("desk_w",10), I("clock_w",100), I("tray_cell",24), I("preview_w",220),
-    O("elements"), A("tray_apps",""),
+    O("elements"), A("tray_apps",""), A("fake_apps",""),
     I("bar_icon_alpha",100), I("bar_text_alpha",100), I("start_icon_alpha",100), I("start_text_alpha",100),
     /* ---- reveal bar ---- */
     B("strip_enabled",0), S("strip_pos","center"), I("strip_width",40), I("strip_height",6),
@@ -48,6 +48,7 @@ static const Def DEFAULTS[] = {
     I("list_row_h",40), I("search_h",32), I("pane_w",230),
     B("start_rounded",0), B("start_list_collapsed",0), B("start_tiles_collapsed",0),
     I("start_width",0), I("start_height",0), I("start_off_x",0), I("start_off_y",0), I("tiles_w",0), I("tiles_h",0), I("list_h",0), I("rail_h",100), I("start_stack_split",50),
+    B("start_autoclose",1), S("list_view","list"), S("pane_view","tiles"),
     S("start_rail_pos","left"), S("start_tiles_side","right"), S("start_pane","tiles"),
     B("start_search_in_bar",0), S("start_bg_image",""), I("start_opacity",100),
     B("start_show_recent",1), B("start_show_most_used",1), B("start_programs_mode",0),
@@ -66,14 +67,14 @@ static const Def DEFAULTS[] = {
     B("skin_enabled",1), S("skin_theme","windows10"), O("skin_custom_themes"), S("skin_color_mode","theme"),
     S("skin_color",""), B("skin_hide_native",0), I("skin_height",31),
     B("skin_btn_pin",1), B("skin_btn_snap",0), B("skin_btn_shade",0), B("skin_click_anim",1),
-    O("skin_btn_hover"), A("skin_exclude",""),
+    O("skin_btn_hover"), O("skin_icons"), O("skin_draft"), S("skin_title_align","auto"), S("skin_buttons_side","auto"), S("skin_icon_pos","auto"), A("skin_exclude",""),
     /* ---- wine controls (system colours) ---- */
     B("ctrl_enabled",0), S("ctrl_preset","windows10"), O("ctrl_colors"),
     /* ---- theme labs ---- */
     O("custom_themes"),
     /* ---- full desktop ---- */
     B("full_desktop",0), S("wallpaper",""), S("wallpaper_mode","fill"), S("desktop_color","#1E3A5F"), B("desktop_lock",0), B("desktop_grid",1),
-    I("grid_size",96), I("desktop_icon_size",48), B("desktop_labels",1), A("desktop_items",""), B("sync_desktop_to_start",1), B("sync_start_to_desktop",1), A("sync_seen",""), A("desk_removed",""),
+    I("widget_alpha",75), I("grid_size",96), I("desktop_icon_size",48), B("desktop_labels",1), A("desktop_items",""), B("sync_desktop_to_start",1), B("sync_start_to_desktop",1), A("sync_seen",""), A("desk_removed",""),
     /* ---- game mode ---- */
     S("game_theme","ps5"), A("games",""), B("game_return",1), B("game_autostart",0), S("game_title","Games"),
     /* ---- misc ---- */

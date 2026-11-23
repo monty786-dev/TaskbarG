@@ -80,6 +80,8 @@ static void hit(int x, int y, int *idx, int *part) {
     for (int i = 0; i < g_n; i++) if (in_rect(&g_c[i].card, x, y)) { *idx = i; *part = in_rect(&g_c[i].closeR, x, y) ? 2 : (in_rect(&g_c[i].pinR, x, y) ? 1 : 0); return; }
 }
 
+int preview_visible(void) { return g_visible; }
+HWND preview_hwnd(void) { return g_wnd; }
 void preview_close(void) { if (!g_visible) return; g_visible = 0; KillTimer(g_wnd, 1); ShowWindow(g_wnd, SW_HIDE); }
 
 static LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
